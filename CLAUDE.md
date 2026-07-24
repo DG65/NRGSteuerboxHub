@@ -31,10 +31,28 @@ getrennten Sitzungen gearbeitet:
 
 ## Transportwege (geplant, noch nicht implementiert)
 
-- **Potentialfreie Kontakte** über ein IPS-I/O-Modul/GPIO — der simple, wahrscheinlich erste
-  Weg (Rundsteuer-/Schaltkontakt der Steuerbox).
-- **EEBus** — aufwendiger eigener Stack; erst wenn eine EEBus-fähige Steuerbox vorliegt. Dann
-  ist ggf. eine eigene Entwicklungssitzung sinnvoll.
+**Zielweg ist ausschließlich EEBus** (Dietmar, 24.07.2026, aus Branchenkenntnis: Zählermonteure
+bestätigen, dass verbaute FREs beim Steuerbox-Einbau zurückgebaut werden — Kontakte sind
+Übergangslösung, kein Dauerzustand). Trotzdem **beide Wege bauen**, da andere NRG-Stack-Nutzer
+ggf. übergangsweise oder dauerhaft nur Kontakte haben (auch per Modbus-Digitalisierer wie
+ADAM-Module/Shellys, falls versehentlich eine reine Kontakt-Steuerbox verbaut wurde):
+
+- **Potentialfreie Kontakte** über ein IPS-I/O-Modul/GPIO oder Modbus-Digitalisierer.
+  Klassisches RCR-Schema (0/30/60/100 %) — bei der §14a-Variante ersetzt das §14a-Signal die
+  100 %-Meldung (kein Signal bei 0/30/60 % → 100 % = keine Abregelung). Der eigentliche
+  Zielwert (`loadPMin`) steht NICHT im Signal, sondern wird vom Installateur/Nutzer in der
+  Instanz konfiguriert (inkl. von Hand berechnetem Gleichzeitigkeitsfaktor bei mehreren
+  Verbrauchern am selben Kontakt — dafür braucht die Instanz eine Rechenhilfe/Formularfeld).
+- **EEBus** — löst das Verkabelungsproblem (keine Steuerleitung bis zu Charger/WP/WR nötig),
+  liefert kontinuierliche Werte statt Stufen, UND überträgt zusätzlich Reduktionsbefehle für
+  die PV-Einspeisung (nicht nur für Verbraucher) — daher die zwei Achsen in `SBH_GetState`
+  (`load*`/`feedIn*`). EEBus-Grundlagen: SPINE (Datenmodell, Use Case „LPC" = Limitation of
+  Power Consumption ist der einschlägige §14a-Fall) + SHIP (gesichertes IP-Transportprotokoll).
+  **Bewusst vage gehalten im Vertrag:** EEBus gilt als komplex und uneinheitlich implementiert
+  (Gerätezertifizierung erst seit Herbst 2025, bei Wallboxen dominiert eher ISO 15118, EEBus
+  eher bei Wärmepumpen) — welche konkreten Werte/Wertebereiche/Nachrichten die tatsächlich
+  verbaute Steuerbox (Ziel: SELEXA) liefert, muss dieses Modul beim Bau selbst herausfinden;
+  das ist NICHT Teil des `SBH_GetState`-Vertrags, sondern interne Übersetzungsarbeit.
 
 ## Abgrenzung: Modul 3 gehört NICHT hierher
 
