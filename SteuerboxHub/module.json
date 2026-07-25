@@ -5,11 +5,15 @@
   "vendor": "",
   "aliases": [
     "SteuerboxHub",
-    "Netzbetreiber-Steuerung (§14a EnWG)"
+    "Netzbetreiber-Steuerung (§14a EnWG)",
+    "NRGSteuerboxHub"
   ],
   "url": "https://github.com/DG65/SteuerboxHub",
   "parentRequirements": [],
   "childRequirements": [],
-  "implemented": [],
+  "implemented": [
+    "SBH_GetState",
+    "SBH_CalculateGZF"
+  ],
   "prefix": "SBH"
 }
