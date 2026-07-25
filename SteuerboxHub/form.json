@@ -1,6 +1,17 @@
 {
   "elements": [
     {
+      "type": "ExpansionPanel",
+      "caption": "📖 Dokumentation & Hilfe",
+      "expanded": false,
+      "items": [
+        { "type": "Label", "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs." },
+        { "type": "Label", "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)." },
+        { "type": "Label", "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe." },
+        { "type": "Label", "caption": "EEBus-Weg: aktuell nur Konfigurationsgerüst, noch ohne Funktion — siehe Hinweis im EEBus-Abschnitt unten." }
+      ]
+    },
+    {
       "type": "Select",
       "name": "Transport",
       "caption": "Transportweg",

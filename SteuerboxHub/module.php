@@ -112,6 +112,34 @@ class SteuerboxHub extends IPSModule
         $this->SetStatus(204);
     }
 
+    // Formular-Reihenfolge (Verbund-Konvention, EMS/Dietmar 24.07.2026):
+    // 1. „Was ist neu" (aufgeklappt, versionsscharf dismissible) — hier noch
+    //    kein Eintrag nötig, erste veröffentlichte Fassung.
+    // 2. „Dokumentation & Hilfe" (eingeklappt, MIT Versionsnummer) — existiert
+    //    bereits in form.json, Versionszeile wird dort nur eingefügt.
+    // 3. Fachpanels (form.json)
+    public function GetConfigurationForm()
+    {
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
+        $this->injectVersionIntoDocPanel($form);
+        return json_encode($form);
+    }
+
+    private function injectVersionIntoDocPanel(array &$form): void
+    {
+        $lib    = @IPS_GetLibrary('{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}');
+        $verTxt = (is_array($lib) && isset($lib['Version']))
+            ? 'ℹ️ SteuerboxHub Version ' . $lib['Version'] . ' (Build ' . ($lib['Build'] ?? '?') . ')'
+            : 'ℹ️ SteuerboxHub';
+        foreach ($form['elements'] as &$el) {
+            if (($el['type'] ?? '') === 'ExpansionPanel' && str_contains($el['caption'] ?? '', 'Dokumentation')) {
+                array_unshift($el['items'], ['type' => 'Label', 'caption' => $verTxt]);
+                return;
+            }
+        }
+        unset($el);
+    }
+
     public function MessageSink($timestamp, $senderID, $message, $data)
     {
         if ($message !== VM_UPDATE) {
