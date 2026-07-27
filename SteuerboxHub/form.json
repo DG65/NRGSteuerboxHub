@@ -93,6 +93,17 @@
           "suffix": " %",
           "minimum": 0,
           "maximum": 100
+        },
+        {
+          "type": "Label",
+          "caption": "Signalverlust-Wächter: warnt, wenn länger als das Intervall kein Update von einer konfigurierten Eingangsvariable kommt. Der zuletzt bekannte Zustand bleibt dabei unverändert bestehen — kein automatischer Rückfall auf „uneingeschränkt”. 0 = Wächter aus."
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "WatchdogTimeout",
+          "caption": "Maximal erlaubte Signalpause",
+          "suffix": " s",
+          "minimum": 0
         }
       ]
     },
@@ -126,6 +137,7 @@
     { "code": 102, "icon": "active", "caption": "Aktiv." },
     { "code": 104, "icon": "inactive", "caption": "Gerüst — Transportweg noch nicht vollständig konfiguriert." },
     { "code": 201, "icon": "error", "caption": "Kontakte-Weg: Eingangsvariable(n) nicht konfiguriert." },
-    { "code": 204, "icon": "inactive", "caption": "EEBus-Weg: noch nicht implementiert (Wartegerüst, siehe CLAUDE.md)." }
+    { "code": 204, "icon": "inactive", "caption": "EEBus-Weg: noch nicht implementiert (Wartegerüst, siehe CLAUDE.md)." },
+    { "code": 205, "icon": "error", "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen." }
   ]
 }

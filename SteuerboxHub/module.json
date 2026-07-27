@@ -13,7 +13,8 @@
   "childRequirements": [],
   "implemented": [
     "SBH_GetState",
-    "SBH_CalculateGZF"
+    "SBH_CalculateGZF",
+    "SBH_CheckWatchdog"
   ],
   "prefix": "SBH"
 }

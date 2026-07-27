@@ -55,6 +55,12 @@ class SteuerboxHub extends IPSModule
         $this->RegisterPropertyInteger('FeedInContactVarID', 0);
         $this->RegisterPropertyBoolean('FeedInContactInverted', false);
         $this->RegisterPropertyFloat('FeedInLimitPercent', 0.0);
+        // Signalverlust-Wächter: 0 = aus. Bei Überschreitung wird NUR gewarnt,
+        // der zuletzt bekannte Zustand bleibt unverändert bestehen (kein
+        // automatischer Rückfall auf "uneingeschränkt" — der Netzbetreiber
+        // könnte weiter dimmen wollen, nur die Meldung fehlt). Empfehlung
+        // OpenEMS Limiter14aImpl: >60 s ohne Signal gilt als kritisch.
+        $this->RegisterPropertyInteger('WatchdogTimeout', 60);
 
         // --- EEBus-Weg: reines Konfigurationsgerüst, kein Client (siehe Klassenkommentar) ---
         $this->RegisterPropertyString('EEBusBridgeURL', '');
@@ -65,6 +71,10 @@ class SteuerboxHub extends IPSModule
         $this->RegisterAttributeInteger('LoadSince', 0);
         $this->RegisterAttributeBoolean('FeedInDimmActive', false);
         $this->RegisterAttributeInteger('FeedInSince', 0);
+        $this->RegisterAttributeInteger('LoadLastSeen', 0);
+        $this->RegisterAttributeInteger('FeedInLastSeen', 0);
+
+        $this->RegisterTimer('SBH_Watchdog', 0, 'SBH_CheckWatchdog($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges()
@@ -76,6 +86,8 @@ class SteuerboxHub extends IPSModule
                 $this->UnregisterMessage($senderID, $message);
             }
         }
+
+        $this->SetTimerInterval('SBH_Watchdog', 0);
 
         if ($this->ReadPropertyInteger('Transport') === 0) {
             $this->applyContactsTransport();
@@ -101,6 +113,11 @@ class SteuerboxHub extends IPSModule
         if ($feedInVarID !== 0 && IPS_VariableExists($feedInVarID)) {
             $this->RegisterMessage($feedInVarID, VM_UPDATE);
             $this->syncContactState('FeedIn', $feedInVarID, $this->ReadPropertyBoolean('FeedInContactInverted'));
+        }
+
+        $timeout = $this->ReadPropertyInteger('WatchdogTimeout');
+        if ($timeout > 0) {
+            $this->SetTimerInterval('SBH_Watchdog', max(5, intdiv($timeout, 2)) * 1000);
         }
 
         $this->SetStatus(102);
@@ -162,11 +179,51 @@ class SteuerboxHub extends IPSModule
 
         $wasActive = $this->ReadAttributeBoolean($axis . 'DimmActive');
         $this->WriteAttributeBoolean($axis . 'DimmActive', $active);
+        $this->WriteAttributeInteger($axis . 'LastSeen', time());
 
         if ($active && !$wasActive) {
             $this->WriteAttributeInteger($axis . 'Since', time());
         } elseif (!$active) {
             $this->WriteAttributeInteger($axis . 'Since', 0);
+        }
+
+        if ($this->GetStatus() === 205) {
+            $this->SetStatus(102);
+        }
+    }
+
+    /**
+     * Signalverlust-Wächter: warnt nur, ändert NIEMALS DimmActive/PMin — der
+     * zuletzt bekannte Zustand bleibt bestehen, bis wieder ein Signal kommt
+     * (siehe Registrierung in Create() für die Begründung).
+     */
+    public function CheckWatchdog()
+    {
+        $timeout = $this->ReadPropertyInteger('WatchdogTimeout');
+        if ($timeout <= 0 || $this->ReadPropertyInteger('Transport') !== 0) {
+            return;
+        }
+
+        $now   = time();
+        $stale = false;
+
+        foreach (['Load' => 'LoadContactVarID', 'FeedIn' => 'FeedInContactVarID'] as $axis => $propName) {
+            if ($this->ReadPropertyInteger($propName) === 0) {
+                continue;
+            }
+            $lastSeen = $this->ReadAttributeInteger($axis . 'LastSeen');
+            if ($lastSeen === 0) {
+                continue; // seit ApplyChanges() noch kein einziges Update erhalten
+            }
+            if ($now - $lastSeen > $timeout) {
+                $stale = true;
+            }
+        }
+
+        if ($stale) {
+            $this->SetStatus(205);
+        } elseif ($this->GetStatus() === 205) {
+            $this->SetStatus(102);
         }
     }
 
