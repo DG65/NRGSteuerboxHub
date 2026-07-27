@@ -8,6 +8,7 @@
         { "type": "Label", "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs." },
         { "type": "Label", "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)." },
         { "type": "Label", "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe." },
+        { "type": "Label", "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar." },
         { "type": "Label", "caption": "EEBus-Weg: aktuell nur Konfigurationsgerüst, noch ohne Funktion — siehe Hinweis im EEBus-Abschnitt unten." }
       ]
     },
@@ -76,23 +77,56 @@
           "minimum": 0
         },
         {
+          "type": "Select",
+          "name": "FeedInMode",
+          "caption": "Einspeiseseite: Kontaktschema",
+          "options": [
+            { "caption": "Einzelkontakt (ein Trigger, Grenze manuell konfiguriert)", "value": 0 },
+            { "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)", "value": 1 }
+          ]
+        },
+        {
           "type": "SelectVariable",
           "name": "FeedInContactVarID",
-          "caption": "Eingangsvariable Einspeisereduktion aktiv (bool)"
+          "caption": "Einzelkontakt: Eingangsvariable Einspeisereduktion aktiv (bool)"
         },
         {
           "type": "CheckBox",
           "name": "FeedInContactInverted",
-          "caption": "Signal invertiert (Ruhekontakt / Öffner)"
+          "caption": "Einzelkontakt: Signal invertiert (Ruhekontakt / Öffner)"
         },
         {
           "type": "NumberSpinner",
           "name": "FeedInLimitPercent",
-          "caption": "Einspeisegrenze bei aktivem Signal (feedInLimitPercent)",
+          "caption": "Einzelkontakt: Einspeisegrenze bei aktivem Signal (feedInLimitPercent)",
           "digits": 0,
           "suffix": " %",
           "minimum": 0,
           "maximum": 100
+        },
+        {
+          "type": "Label",
+          "caption": "FNN-Dreistufenschema: W3 = 0 % (keine Einspeisung), S1 = 60 %, S2 = 30 %, alle drei offen = 100 % (unbegrenzt). Sind mehrere Kontakte gleichzeitig aktiv, gilt der niedrigste Prozentwert."
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInW3VarID",
+          "caption": "FNN: Eingangsvariable W3 (0 %)"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInS1VarID",
+          "caption": "FNN: Eingangsvariable S1 (60 %)"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInS2VarID",
+          "caption": "FNN: Eingangsvariable S2 (30 %)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "FeedInFNNInverted",
+          "caption": "FNN: Signale invertiert (Ruhekontakte / Öffner)"
         },
         {
           "type": "Label",

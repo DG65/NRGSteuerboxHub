@@ -52,9 +52,20 @@ class SteuerboxHub extends IPSModule
         $this->RegisterPropertyFloat('LoadPMin', 4.2);
         $this->RegisterPropertyInteger('GZFConsumerCount', 1);
         $this->RegisterPropertyFloat('GZFFactor', 1.0);
+        // Einspeiseseite: reale FNN-Steuerboxen (Vorbild: evcc-Referenz-Doku
+        // "FNN-Steuerbox via GPIO") melden hier NICHT einen einzelnen binären
+        // Trigger, sondern DREI separate Kontakte für die drei Stufen des
+        // FNN-Vierstufenschemas (0/30/60 %, „alle offen" = 100 %/unbegrenzt):
+        // W3 = 0 %, S1 = 60 %, S2 = 30 %. Beide Varianten bleiben wählbar, da
+        // manche Digitalisierer/Steuerboxen nur einen einzelnen Trigger liefern.
+        $this->RegisterPropertyInteger('FeedInMode', 0); // 0 = Einzelkontakt, 1 = FNN-Dreistufen (W3/S1/S2)
         $this->RegisterPropertyInteger('FeedInContactVarID', 0);
         $this->RegisterPropertyBoolean('FeedInContactInverted', false);
         $this->RegisterPropertyFloat('FeedInLimitPercent', 0.0);
+        $this->RegisterPropertyInteger('FeedInW3VarID', 0);
+        $this->RegisterPropertyInteger('FeedInS1VarID', 0);
+        $this->RegisterPropertyInteger('FeedInS2VarID', 0);
+        $this->RegisterPropertyBoolean('FeedInFNNInverted', false);
         // Signalverlust-Wächter: 0 = aus. Bei Überschreitung wird NUR gewarnt,
         // der zuletzt bekannte Zustand bleibt unverändert bestehen (kein
         // automatischer Rückfall auf "uneingeschränkt" — der Netzbetreiber
@@ -73,6 +84,7 @@ class SteuerboxHub extends IPSModule
         $this->RegisterAttributeInteger('FeedInSince', 0);
         $this->RegisterAttributeInteger('LoadLastSeen', 0);
         $this->RegisterAttributeInteger('FeedInLastSeen', 0);
+        $this->RegisterAttributeFloat('FeedInPercent', 100.0); // nur FeedInMode=1 (FNN-Dreistufen)
 
         $this->RegisterTimer('SBH_Watchdog', 0, 'SBH_CheckWatchdog($_IPS[\'TARGET\']);');
     }
@@ -98,10 +110,15 @@ class SteuerboxHub extends IPSModule
 
     private function applyContactsTransport(): void
     {
-        $loadVarID   = $this->ReadPropertyInteger('LoadContactVarID');
-        $feedInVarID = $this->ReadPropertyInteger('FeedInContactVarID');
+        $loadVarID    = $this->ReadPropertyInteger('LoadContactVarID');
+        $fnnMode      = $this->ReadPropertyInteger('FeedInMode') === 1;
+        $feedInVarID  = $this->ReadPropertyInteger('FeedInContactVarID');
+        $feedInW3     = $this->ReadPropertyInteger('FeedInW3VarID');
+        $feedInS1     = $this->ReadPropertyInteger('FeedInS1VarID');
+        $feedInS2     = $this->ReadPropertyInteger('FeedInS2VarID');
+        $feedInWired  = $fnnMode ? ($feedInW3 !== 0 || $feedInS1 !== 0 || $feedInS2 !== 0) : ($feedInVarID !== 0);
 
-        if ($loadVarID === 0 && $feedInVarID === 0) {
+        if ($loadVarID === 0 && !$feedInWired) {
             $this->SetStatus(201);
             return;
         }
@@ -110,7 +127,15 @@ class SteuerboxHub extends IPSModule
             $this->RegisterMessage($loadVarID, VM_UPDATE);
             $this->syncContactState('Load', $loadVarID, $this->ReadPropertyBoolean('LoadContactInverted'));
         }
-        if ($feedInVarID !== 0 && IPS_VariableExists($feedInVarID)) {
+
+        if ($fnnMode) {
+            foreach ([$feedInW3, $feedInS1, $feedInS2] as $varID) {
+                if ($varID !== 0 && IPS_VariableExists($varID)) {
+                    $this->RegisterMessage($varID, VM_UPDATE);
+                }
+            }
+            $this->syncFeedInFNN();
+        } elseif ($feedInVarID !== 0 && IPS_VariableExists($feedInVarID)) {
             $this->RegisterMessage($feedInVarID, VM_UPDATE);
             $this->syncContactState('FeedIn', $feedInVarID, $this->ReadPropertyBoolean('FeedInContactInverted'));
         }
@@ -166,8 +191,64 @@ class SteuerboxHub extends IPSModule
         if ($senderID === $this->ReadPropertyInteger('LoadContactVarID')) {
             $this->syncContactState('Load', $senderID, $this->ReadPropertyBoolean('LoadContactInverted'));
         }
-        if ($senderID === $this->ReadPropertyInteger('FeedInContactVarID')) {
+
+        if ($this->ReadPropertyInteger('FeedInMode') === 1) {
+            $fnnVarIDs = [
+                $this->ReadPropertyInteger('FeedInW3VarID'),
+                $this->ReadPropertyInteger('FeedInS1VarID'),
+                $this->ReadPropertyInteger('FeedInS2VarID'),
+            ];
+            if (in_array($senderID, $fnnVarIDs, true)) {
+                $this->syncFeedInFNN();
+            }
+        } elseif ($senderID === $this->ReadPropertyInteger('FeedInContactVarID')) {
             $this->syncContactState('FeedIn', $senderID, $this->ReadPropertyBoolean('FeedInContactInverted'));
+        }
+    }
+
+    /**
+     * FNN-Dreistufenschema (Vorbild: evcc "FNN-Steuerbox via GPIO"): drei
+     * Kontakte W3 (0 %) / S1 (60 %) / S2 (30 %), alle offen = 100 % (unbegrenzt).
+     * Niedrigster Prozentwert gewinnt, falls mehrere Kontakte gleichzeitig aktiv sind.
+     */
+    private function syncFeedInFNN(): void
+    {
+        $inverted = $this->ReadPropertyBoolean('FeedInFNNInverted');
+        $percent  = 100.0;
+        $anySeen  = false;
+
+        foreach (['FeedInW3VarID' => 0.0, 'FeedInS2VarID' => 30.0, 'FeedInS1VarID' => 60.0] as $propName => $level) {
+            $varID = $this->ReadPropertyInteger($propName);
+            if ($varID === 0 || !IPS_VariableExists($varID)) {
+                continue;
+            }
+            $anySeen = true;
+            $raw    = (bool) GetValue($varID);
+            $active = $inverted ? !$raw : $raw;
+            if ($active && $level < $percent) {
+                $percent = $level;
+            }
+        }
+
+        if (!$anySeen) {
+            return;
+        }
+
+        $active    = $percent < 100.0;
+        $wasActive = $this->ReadAttributeBoolean('FeedInDimmActive');
+
+        $this->WriteAttributeFloat('FeedInPercent', $percent);
+        $this->WriteAttributeBoolean('FeedInDimmActive', $active);
+        $this->WriteAttributeInteger('FeedInLastSeen', time());
+
+        if ($active && !$wasActive) {
+            $this->WriteAttributeInteger('FeedInSince', time());
+        } elseif (!$active) {
+            $this->WriteAttributeInteger('FeedInSince', 0);
+        }
+
+        if ($this->GetStatus() === 205) {
+            $this->SetStatus(102);
         }
     }
 
@@ -207,8 +288,13 @@ class SteuerboxHub extends IPSModule
         $now   = time();
         $stale = false;
 
-        foreach (['Load' => 'LoadContactVarID', 'FeedIn' => 'FeedInContactVarID'] as $axis => $propName) {
-            if ($this->ReadPropertyInteger($propName) === 0) {
+        $fnnMode      = $this->ReadPropertyInteger('FeedInMode') === 1;
+        $feedInWired  = $fnnMode
+            ? ($this->ReadPropertyInteger('FeedInW3VarID') !== 0 || $this->ReadPropertyInteger('FeedInS1VarID') !== 0 || $this->ReadPropertyInteger('FeedInS2VarID') !== 0)
+            : ($this->ReadPropertyInteger('FeedInContactVarID') !== 0);
+
+        foreach (['Load' => $this->ReadPropertyInteger('LoadContactVarID') !== 0, 'FeedIn' => $feedInWired] as $axis => $wired) {
+            if (!$wired) {
                 continue;
             }
             $lastSeen = $this->ReadAttributeInteger($axis . 'LastSeen');
@@ -261,7 +347,11 @@ class SteuerboxHub extends IPSModule
             'loadPMin'           => $isContacts ? $this->ReadPropertyFloat('LoadPMin') : 0.0,
             'loadSince'          => $isContacts ? $this->ReadAttributeInteger('LoadSince') : 0,
             'feedInDimmActive'   => $feedInActive,
-            'feedInLimitPercent' => $feedInActive ? $this->ReadPropertyFloat('FeedInLimitPercent') : 100.0,
+            'feedInLimitPercent' => $isContacts
+                ? ($this->ReadPropertyInteger('FeedInMode') === 1
+                    ? $this->ReadAttributeFloat('FeedInPercent')
+                    : ($feedInActive ? $this->ReadPropertyFloat('FeedInLimitPercent') : 100.0))
+                : 100.0,
             'feedInSince'        => $isContacts ? $this->ReadAttributeInteger('FeedInSince') : 0,
         ];
     }
