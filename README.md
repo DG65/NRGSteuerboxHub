@@ -4,7 +4,6 @@
 ![Modul Version](https://img.shields.io/badge/Modul_Version-0.1.0-blue)
 ![Symcon Version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
-[![Check Style](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml)
 [![PayPal](https://img.shields.io/badge/PayPal-Me-blue?logo=paypal)](https://paypal.me/DietmarGureth)
 
 IP-Symcon-Modul zur Erfassung des Dimm-/Steuersignals des Netzbetreibers nach **§14a EnWG**
