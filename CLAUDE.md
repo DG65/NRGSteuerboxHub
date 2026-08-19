@@ -6,7 +6,7 @@ Teil desselben Modul-Verbunds (DG65-Energie-Suite), an mehreren wird teils gleic
 getrennten Sitzungen gearbeitet:
 
 - **SteuerboxHub** (dieses Repo): §14a-EnWG-Dimmsignal des Netzbetreibers — https://github.com/DG65/SteuerboxHub
-- **EMS**: koordinierende Instanz, einziger zulässiger Konsument der Steuer-Verträge — https://github.com/DG65/EMS
+- **EMS**: koordinierende Instanz, einziger zulässiger Konsument der Steuer-Verträge — https://github.com/DG65/NRGEMS
 - **InverterHub / MeterHub / ChargerHub**: Geräte-Hubs (Modbus TCP)
 - **HeishaMon**: Wärmepumpe (liefert §14a-Stellhebel: Heizstab sperren, Quiet Mode)
 - **TibberGridRewards**: Preiskurve/Tarif (Modul-3-Netzentgelte gehören DORTHIN, nicht hierher)
