@@ -166,6 +166,11 @@
     {
       "type": "Label",
       "caption": "Zugangsdaten (falls die Bridge ein Token verlangt) werden nicht in Properties gespeichert (IP-Symcon verschlüsselt Properties nicht), sondern als Instanz-Attribut nach der ersten Kopplung."
+    },
+    {
+      "type": "Button",
+      "caption": "🔄 Übernehmen erzwingen (ohne Formularänderung)",
+      "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() ausgeführt.';"
     }
   ],
   "actions": [],
