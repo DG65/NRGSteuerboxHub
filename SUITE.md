@@ -186,9 +186,11 @@ umgestellt haben.
 | `compressorStartsID` | 1.10 | Kumulierte Verdichter-Starts (Takt-Analyse) | ✅ | 0 |
 | `operationsHoursID` | 1.10 | Kumulierte Betriebsstunden | ✅ | 0 |
 | `dailyEnergyHeatingID`/`dailyEnergyCoolingID`/`dailyEnergyDHWID`/`dailyEnergyTotalID` | 1.11 | Tages-Energiezaehler je Kategorie; springt taeglich auf 0 (KEIN kumulativer Zaehler, daher eigene Felder statt `EnergyID`, siehe Grundregel bei "Gemeinsame Variablenprofile") | 0 (andere Verbrauchsquellen lokal) | ✅ |
+| `internalHeaterStateID`/`externalHeaterStateID` | 1.12 | Backup-/Zusatzheizstab aktiv (bool) — Hardware-Lage (intern im Innengeraet vs. extern/Booster), NICHT WW/Raum. Firmware-Topics `main/Internal_Heater_State`/`main/External_Heater_State`; Verwechslungsfalle: `main/DHW_Heater_State`/`main/Room_Heater_State` sind Freigabe-Flags, keine Statuswerte | ✅ | 0 |
+| `forceHeaterStateID` | 1.12 | Notheizstab-Taste aktiv (bool), `main/Force_Heater_State` — optional, kein Konsument angefragt | ✅ | 0 |
 
 Stets 0/leer = "meine Datenquelle liefert das nicht" (kein Fehler, siehe
-Grundregeln oben). Aktueller `contractVersion`-Stand: **1.11**.
+Grundregeln oben). Aktueller `contractVersion`-Stand: **1.12**.
 
 ### 3. Update-Meldepflicht beim Konsumenten
 Ein Konsument (in erster Linie das EMS, aber auch Kacheln) kennt je Partnerschnittstelle
