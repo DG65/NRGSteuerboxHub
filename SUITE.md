@@ -887,7 +887,10 @@ Ident-Tabelle für `IPS_RequestAction($InstanceID, $Ident, $Value)` auf einer In
 **Vollständige `ctl_ems_mode`-Tabelle (InverterHub, 12.08.2026, wörtlich aus der
 offiziellen GoodWe-Registerdokumentation "Modbus Protocol Hybrid ET/EH/BH/BT",
 ARM205-HV v1.7 (2020-02-26), Tabelle 8-16 "EMS Power Mode" — keine Vermutung mehr,
-ersetzt eine frühere, teils nur namensbasierte Fassung):**
+ersetzt eine frühere, teils nur namensbasierte Fassung. Ergänzung 22.08.2026:
+Ladestrom-Limit-Hinweis bei Modus 2 aus dem Original-Englisch nachgetragen,
+Quelle z.B. https://forum.iobroker.net/assets/uploads/files/1703579717824-arm.745.esg2.et30.modbus.protocol.map.20221231..v1.pdf,
+Tabelle 8-16):**
 
 **Zentraler Mechanismus — Xmax vs. Xset, steht bei jedem Modus einzeln in der
 Tabelle, nicht einheitlich:**
@@ -900,7 +903,7 @@ Tabelle, nicht einheitlich:**
 |---|---|---|---|
 | 0 | Gestoppt | kein Parameter | Systemabschaltung/Standby |
 | 1 | Automatik | kein Parameter | `PBattery = PInv − Pmeter − Ppv`, normale Selbstverbrauchslogik, NUR bei normaler Zählerkommunikation |
-| 2 | Laden-Solar | **Xmax** (Deckel) | `PBattery = Xmax + PV (Charge)`. Xmax = erlaubter Netzbezug, PV bevorzugt. `0` = nur PV, kein Netzbezug |
+| 2 | Laden-Solar | **Xmax** (Deckel) | `PBattery = Xmax + PV (Charge)`. Xmax = erlaubter Netzbezug, PV bevorzugt. `0` = nur PV, kein Netzbezug. **Zusaetzlich durch das Ladestrom-Limit der Batterie begrenzt** ("Charging power will be limited by charging current limit", Originaltext Tabelle 8-16) — Xmax ist NICHT die alleinige Obergrenze |
 | 3 | Entladen+Solar | **Xmax** (Deckel) | `PBattery = Xmax (Discharge)`. Xmax = max. erlaubte Entladeleistung, PV bevorzugt bei begrenzter Einspeisung |
 | 4 | AC-Import | **Xset** (aktives Ziel) | `PBattery = Xset + PV (Charge)`. Xset = bewusst aus dem Netz bezogene Leistung, bevorzugt aus dem Netz gedeckt |
 | 5 | AC-Export | **Xset** (aktives Ziel, **zapft die Batterie an**) | `PBattery = Xset (Discharge)`. "PV power is preferred. When PV energy is insufficient, the battery WILL discharge." **Keine reine Deckelung** — live bestätigt als Ursache für unbeabsichtigte Batterie-Entladung (EMS-Branch-3b-Vorfall, 03./04.08.2026) |
