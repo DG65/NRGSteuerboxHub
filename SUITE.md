@@ -754,6 +754,22 @@ sein sollen, dürfen NICHT nur als Buttons/Schalter im Kachel-HTML existieren
 `EnableAction()` (Boolean-Switch oder Integer+Enumeration für mehrere
 Aktionen). Liegen die zugrundeliegenden Daten in einer anderen Instanz,
 `IPS_CreateLink()` (Verknüpfung) verwenden, nicht kopieren.
+**Klarstellung (Prognose-Sitzung, 25.08.2026, gegen die offizielle Symcon-
+Doku geprüft):** Der native Vergrößern-Doppelpfeil ist damit fürs Ablegen
+eigener Einstellungen tabu — es gibt aber einen echten, dokumentierten Weg,
+Formularwerte DIREKT aus der eigenen Kachel (`module.html`) heraus zu
+ändern: die JS-Funktion `requestAction(ident, value)` ruft serverseitig
+`RequestAction($Ident, $Value)` der Modulklasse auf (dieselbe Methode, die
+sonst WebFront-Buttons/-Schalter bedient). `RequestAction()` kann darin
+`IPS_SetProperty($this->InstanceID, ...)` + `IPS_ApplyChanges($this->
+InstanceID)` aufrufen, um echte Properties zu setzen. Das ist NICHT
+dasselbe wie das in Punkt 1 der Store-Review-Checkliste verbotene stille
+Selbst-Speichern aus einem offenen, ungespeicherten Konsolen-Formular —
+hier löst ein bewusster Nutzer-Klick/Regler in der eigenen Kachel die
+Änderung aus, kein automatischer Hintergrundvorgang. Wer Einstellungen
+direkt im WebFront anbieten will: eigenes Icon/Panel im eigenen
+`module.html` bauen, per `requestAction()` anbinden — nicht über den
+nativen Doppelpfeil.
 
 **11. `Sys_GetURLContentEx()` kann kein POST — `Method`/`Content`/`Header`-Schlüssel
 werden STILLSCHWEIGEND ignoriert, es geht immer ein GET raus.** Live gefunden
