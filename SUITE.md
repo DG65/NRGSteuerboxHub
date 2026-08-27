@@ -895,6 +895,18 @@ Einheiten-Feld direkt im Vertrag (z. B. `priceUnit` in `EMS_GetDayPlan()`), das 
 AUSWERTET statt die Einheit fest anzunehmen -- macht den Vertrag robust gegen kuenftige
 Einheiten-Aenderungen des Anbieters, ohne dass der Konsument seinen Code manuell nachziehen muss.
 
+**17. Ein Skript ohne öffnenden `<?php`-Tag am Anfang läuft in IPS lautlos OHNE
+jede PHP-Ausführung durch — kein Syntaxfehler, keine "defekt"-Meldung, einfach
+gar nichts.** Live gefunden (Tibber Grid Reward, 25.08.2026, beim Aufbau eines
+Backfill-Skripts für die Preis-Archivierung) — kostete eine Weile Fehlersuche,
+bis der Nutzer selbst drauf kam. Passt zum in dieser Sitzung wiederholt
+beobachteten Muster "Skript meldet ✅ Erfolgreich, hat aber sichtbar nichts
+bewirkt" — fehlendes `<?php` ist eine mögliche, leicht zu übersehende Ursache
+dafür, neben echten Automatisierungs-Tool-Unzuverlässigkeiten. **Regel:** Bei
+jedem neu geschriebenen/generierten Skript, das trotz "Erfolgreich" keine
+sichtbare Wirkung zeigt, zuerst den öffnenden `<?php`-Tag prüfen, bevor man
+tiefer nach Logikfehlern oder Verbindungsproblemen sucht.
+
 ## GoodWe-Steuerregister (InverterHub, Stand 27.07.2026)
 
 Ident-Tabelle für `IPS_RequestAction($InstanceID, $Ident, $Value)` auf einer InverterHub-Instanz:
