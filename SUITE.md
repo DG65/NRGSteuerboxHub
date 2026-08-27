@@ -907,6 +907,28 @@ jedem neu geschriebenen/generierten Skript, das trotz "Erfolgreich" keine
 sichtbare Wirkung zeigt, zuerst den öffnenden `<?php`-Tag prüfen, bevor man
 tiefer nach Logikfehlern oder Verbindungsproblemen sucht.
 
+**18. Kalendertag-/Slot-Grenzen NIE über eine feste Sekundenzahl wie
+`$start + 86400` oder `Date.now() - N*86400000` berechnen -- ein Tag hat nicht
+immer 86400 Sekunden.** Verbundweite Prüfung, von Dietmar via Dashboard
+angestoßen (25.08.2026), nachdem er selbst einen Sommer-/Winterzeit-Bug bei
+Dashboard bemerkt hatte. An den zwei DST-Übergangstagen im Jahr (23h-Tag im
+März, 25h-Tag im Oktober) verrutscht jede Slot-zu-Uhrzeit-Zuordnung, die von
+"1 Tag = 86400s" ausgeht -- Symcon selbst stellt die Systemzeit automatisch
+um, das schützt aber nicht vor eigener fester Sekundenarithmetik. Bei EMS live
+bestätigt und behoben (0.24.x): `GetDayPlan()`s Slot→Zeitstempel-Mapping
+(`$baseToday + $slot*900` für 96 Viertelstunden) und `getPvStartTomorrowTs()`
+(`$midnight + $i*900`) nutzten beide diese Annahme. **Fix:** echte Wanduhrzeit
+über `mktime($stunde, $minute, 0, $monat, $tag, $jahr)` konstruieren statt
+Sekunden zu einem Basis-Zeitstempel zu addieren -- `mktime()` löst DST für das
+Kalenderdatum korrekt auf (siehe `slotTimestamp()`-Hilfsfunktion). **Nicht
+betroffen:** reine Sekunden-**Deltas** zwischen zwei bereits bekannten
+Timestamps (z. B. Preisfenster-Dauer), sowie IPS' eigener Wochenplan-
+Mechanismus (`IPS_SetEventScheduleGroupPoint()`), der ohnehin mit Stunde/
+Minute statt Sekunden arbeitet und DST intern selbst auflöst. **Regel:** Jedes
+Modul, das Tages-/Wochen-/Monatsgrenzen oder Slot-Raster berechnet, prüft
+seinen Code auf `+86400`/`*86400`/feste Tagessekundenzahlen und ersetzt sie
+durch `strtotime('+1 day', ...)`/`mktime()`/`DateTime::modify()`.
+
 ## GoodWe-Steuerregister (InverterHub, Stand 27.07.2026)
 
 Ident-Tabelle für `IPS_RequestAction($InstanceID, $Ident, $Value)` auf einer InverterHub-Instanz:
