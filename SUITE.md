@@ -1316,6 +1316,19 @@ URLs im Verbund zeigen direkt auf die kanonischen `NRG*`-Namen (verbundweiter
 Sweep, inkl. der ModulControl-relevanten URLs) — kein neuer Link darf einen
 Alt-Namen verwenden, auch nicht "weil der Redirect ja funktioniert".
 
+**`library.json`→`"name"` (die Zeile, die in der Modulverwaltung erscheint)
+folgt IMMER dem Muster `"NRG-Stack <Modul> for IP-Symcon"` (Bindestrich +
+Leerzeichen bei "NRG-Stack", Leerzeichen vor "for").** Live gefunden
+(StrukturHub, 28.08.2026): kein Modul dokumentierte dieses Muster bisher
+explizit, dadurch entstand Vokabular-Drift wie beim outsideTempID/
+outdoorTemperatureID-Fall — 11 von 13 Modulen nutzen das Muster korrekt, aber
+SteuerboxHub und Szenariorechner (beide nach der Repo-Umbenennung 19.08.
+entstanden) weichen auf `"NRG<Modul> for IP-Symcon"` ab, vermutlich weil sie
+sich am kanonischen Repo-Namen statt an der Mehrheit orientiert haben.
+StrukturHub selbst lief anfangs in dieselbe Falle. **Vor dem ersten
+`library.json`-Commit eines neuen Moduls dieses Muster pruefen, nicht den
+eigenen Repo-Namen 1:1 uebernehmen.**
+
 ## Lizenz
 
 Alle NRG-Stack-Module stehen unter der **PolyForm Noncommercial License 1.0.0** (privat/nicht-kommerziell frei, gewerblich lizenzpflichtig — Kontakt DG65; Spenden willkommen: [paypal.me/DietmarGureth](https://paypal.me/DietmarGureth)). Kanonischer Text: [`LICENSE`](https://github.com/DG65/NRGEMS/blob/main/LICENSE). Der Wechsel wirkt nur nach vorn: Bei bereits im Store veröffentlichten Modulen gilt PolyForm erst ab dem jeweiligen beta→main-Release; die dort noch gelistete Fassung bleibt MIT, und unter MIT bezogene Altversionen bleiben MIT.
