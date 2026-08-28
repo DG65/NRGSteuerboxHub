@@ -119,6 +119,27 @@ Konsument soll auf einen Wert-Schnappschuss angewiesen sein, der zwischen zwei
 zusaetzlich fuer Diagnose bestehen, wird aber nicht mehr zur eigentlichen
 Entscheidungslogik der Konsumenten.
 
+**Muster: neue Konsumenten-Features muessen den bestehenden Discovery-
+Mechanismus nutzen, nicht daneben eine manuelle Verknuepfung neu erfinden**
+(EMS, 20.08.2026). Konkreter Fund: EMS' `Discover()` findet installierte
+Partnermodule (u. a. Tibber Grid Reward) laengst automatisch und ruft ihre
+Vertragsfunktionen ab (z. B. `TIBBERGR_GetTariffConfig`) — der neue
+Tagesplan (`BuildDayPlan()`, 0.21.0) las die PT15M-Preiskurve aber ueber eine
+manuell zu verknuepfende Property, obwohl `TIBBERGR_GetPriceCurve` **1.1**
+laengst existiert und automatisch geholt werden koennte. Ergebnis: der
+Tagesplan blieb auf einer produktiven Anlage leer, obwohl alle Bausteine
+installiert und aktiv waren — Dietmar musste die Luecke selbst im Formular
+entdecken. Lehre: **jedes neue Feature, das Daten von einem Partnermodul
+braucht, MUSS zuerst pruefen, ob eine automatische Discovery/Get*-Funktion
+dafuer schon existiert**, bevor eine neue manuelle `SelectVariable`-Property
+angelegt wird — eine manuelle Property ist nur als Fallback fuer Nutzer ohne
+das jeweilige Partnermodul gerechtfertigt (siehe Batteriestring-Panel als
+korrektes Vorbild: "nur ausfuellen, falls kein Partnermodul automatisch
+gefunden"), nicht als alleiniger Weg. Fix: `getPT15MTodayJson()` versucht
+zuerst `TIBBERGR_GetPriceCurve()` ueber `getTibberGridRewardInstance()`,
+faellt nur bei fehlender Instanz/leerem Ergebnis auf die manuelle Property
+zurueck (EMS 0.21.2).
+
 ### Kanonisches Feldregister: `Type=>'heatpump'`-Vertrag
 
 **Warum dieses Register existiert (13.08.2026):** HeishaMon fuehrte in 1.10 ein
@@ -165,9 +186,11 @@ umgestellt haben.
 | `compressorStartsID` | 1.10 | Kumulierte Verdichter-Starts (Takt-Analyse) | ✅ | 0 |
 | `operationsHoursID` | 1.10 | Kumulierte Betriebsstunden | ✅ | 0 |
 | `dailyEnergyHeatingID`/`dailyEnergyCoolingID`/`dailyEnergyDHWID`/`dailyEnergyTotalID` | 1.11 | Tages-Energiezaehler je Kategorie; springt taeglich auf 0 (KEIN kumulativer Zaehler, daher eigene Felder statt `EnergyID`, siehe Grundregel bei "Gemeinsame Variablenprofile") | 0 (andere Verbrauchsquellen lokal) | ✅ |
+| `internalHeaterStateID`/`externalHeaterStateID` | 1.12 | Backup-/Zusatzheizstab aktiv (bool) — Hardware-Lage (intern im Innengeraet vs. extern/Booster), NICHT WW/Raum. Firmware-Topics `main/Internal_Heater_State`/`main/External_Heater_State`; Verwechslungsfalle: `main/DHW_Heater_State`/`main/Room_Heater_State` sind Freigabe-Flags, keine Statuswerte | ✅ | 0 |
+| `forceHeaterStateID` | 1.12 | Notheizstab-Taste aktiv (bool), `main/Force_Heater_State` — optional, kein Konsument angefragt | ✅ | 0 |
 
 Stets 0/leer = "meine Datenquelle liefert das nicht" (kein Fehler, siehe
-Grundregeln oben). Aktueller `contractVersion`-Stand: **1.11**.
+Grundregeln oben). Aktueller `contractVersion`-Stand: **1.12**.
 
 ### 3. Update-Meldepflicht beim Konsumenten
 Ein Konsument (in erster Linie das EMS, aber auch Kacheln) kennt je Partnerschnittstelle
@@ -256,6 +279,55 @@ InverterHub), von oben nach unten:
 Details und Begründung: siehe Memory `nrg-stack-formular-konvention`. Bestehende Module
 rüsten bei Gelegenheit nach, neue Module (MeterHub/ChargerHub) bauen von Anfang an so.
 
+**Status neben manuellen Fallback-Feldern** (verbundweite Konvention, 20.08.2026 — Dietmars
+Einwand: ein leeres `SelectVariable`-Auswahlfeld sagt nicht, ob es gerade durch eine
+automatische Discovery ohnehin überholt/unnötig ist, das musste er bislang selbst im Formular
+erraten). Jedes `SelectVariable`-Fallback-Feld, das laut "Muster: neue Konsumenten-Features
+müssen den bestehenden Discovery-Mechanismus nutzen" (siehe oben) NUR für Installationen ohne
+das jeweilige Partnermodul gedacht ist, bekommt in `GetConfigurationForm()` (nicht `form.json`,
+da live berechnet) direkt darüber ein `Label` mit einer der vier Ampel-Aussagen:
+- ✅ **automatisch verbunden** — nennt Instanz-ID + Name + (wo sinnvoll) eine Kennzahl der
+  gelieferten Daten (z. B. Anzahl Slots); das Feld darunter wird ignoriert.
+- ⚠️ **Partnerinstanz gefunden, liefert aber gerade nichts Brauchbares** — Fallback-Feld ist
+  aktiv, aber das ist wahrscheinlich ein Symptom eines anderen Problems, nicht der Normalfall.
+- ℹ️ **keine Partnerinstanz gefunden, Feld optional** — Fallback-Feld wird zwar gebraucht,
+  das Fehlen degradiert aber nur eine einzelne Funktion (z. B. der Tagesplan bleibt leer),
+  der Rest von EMS funktioniert unverändert weiter.
+- ⛔ **PFLICHTFELD, in Rot** (`'color' => 0xFF0000` im Label-Array) — nur wenn das Fehlen
+  NICHT nur eine Funktion abschaltet, sondern EMS mit einem STILLSCHWEIGEND FALSCHEN Wert
+  weiterrechnet (z. B. Batterie-SOC=0%, wenn weder InverterHub noch das manuelle Feld einen
+  Wert liefern — EMS denkt dann faelschlich, die Batterie sei leer, und trifft Entscheidungen
+  auf dieser falschen Grundlage). Der Unterschied zu ℹ️ ist bewusst scharf: ℹ️ heisst "eine
+  Funktion fehlt einfach", ⛔ heisst "EMS entscheidet aktiv falsch, wenn das hier nicht gefuellt
+  wird". Nicht inflationaer verwenden — die meisten Fallback-Felder sind ℹ️, nicht ⛔.
+
+**Praezisierung 20.08.2026:** wirklich JE FELD, nicht ein Pauschalsatz oben im Panel ("schau im
+Verbund-Status-Panel nach") — verschiedene Felder im selben Panel koennen unterschiedliche
+Automatik-Wege haben (Beispiel Netzmesspunkte-Panel unten: Gesamtleistung hat einen echten
+Automatik-Pfad, die Phasenwerte L1-L3/Frequenz/Status aktuell nicht). **Wenn fuer ein Feld gar
+kein Automatik-Pfad im Code existiert, muss die Zeile das ehrlich sagen** ("ℹ️ EMS liest diesen
+Wert aktuell nicht automatisch von einem Partnermodul") statt so zu tun, als waere das Feld
+einfach nur zufaellig leer — sonst wird aus der Konvention selbst wieder eine neue Luecke, die
+der Nutzer erraten muss.
+
+Referenzimplementierungen (`module.php`, EMS 0.21.3):
+- `getPT15MStatusLine()` — Tibber-Panel, PT15M-Preiskurve, echter Automatik-Pfad (ℹ️-Stufe,
+  da nur der Tagesplan betroffen ist, kein ⛔).
+- `getGridFieldStatusLine()` — Netzmesspunkte-Panel, gemischt: Gesamtleistung hat einen
+  Automatik-Pfad (InverterHub `gridPowerID`), die uebrigen Felder ehrlich ohne.
+- `getBatterySocStatusLine()` — Batteriespeicher-Panel, Bat1-SOC-Feld: erste ⛔-Stufe im
+  Verbund, weil BuildDayPlan() den SOC bislang komplett am InverterHub-Automatik-Pfad vorbei
+  gelesen hatte (`getCurrentBatterySoc()`, gleicher Fehlertyp wie die PT15M-Preise selbst —
+  neues Feature nutzte die vorhandene Discovery nicht, EMS 0.21.3-Fix).
+- `statusLabel()` — normalisiert String ODER `['caption'=>..,'color'=>..]`-Array zu einem
+  fertigen `form.json`-Label-Element, damit jeder Status-Helper nur den Inhalt liefert, nicht
+  das Wrapping wiederholt.
+
+Alle ergaenzen (ersetzen nicht) das bestehende "🔗 Verbund-Status"-Panel oben im Formular —
+jenes zeigt nur eine grobe Zusammenfassung pro Partnermodul-Typ (`InverterHub=1 MeterHub=1 ...`),
+diese Konvention bringt die Aussage bis auf Feldebene runter, direkt neben das betroffene
+Formularfeld selbst.
+
 **Pflege-Pflicht:** Jedes Modul prüft bei JEDEM Fix/Update/Upgrade selbst, ob etwas ins
 "Was ist Neu?" oder "Dokumentation & Hilfe" gehört — die Prüfung ist Pflicht, das Ergebnis
 darf "nichts Relevantes" sein.
@@ -282,6 +354,49 @@ ist dokumentiert, "tooltip" fehlt). Für erklärungsbedürftige Einzelfelder sta
 - **`Label`**-Element über/unter dem Feld für kurze, immer sichtbare Erklärungen.
 - Für den Gesamtzusammenhang bleibt das bestehende "📖 Dokumentation & Hilfe"-Panel (Punkt 2
   oben) die richtige Stelle, nicht jedes Feld einzeln kommentieren.
+
+**Einheitliche Verbund-Status-Kopfzeile** (verbundweite Konvention, 20.08.2026 —
+Dietmars Einwand: jedes Modul baut sein "Gefunden/Verbunden"-Statuspanel gerade
+irgendwie anders, EMS' bisheriger technischer Fließtext-Satz — z. B.
+"NRG-Stack Partnermodule: InverterHub=1 MeterHub=1 ChargerHub=1 ..." — gefiel
+ihm sichtbar am wenigsten im Vergleich zu einer anderen, knapperen Anzeige,
+die er bereits in einem Modul gesehen hat). Referenz-Screenshot: ein Panel mit
+Button "GERÄTE JETZT SUCHEN" darüber, direkt darunter eine EINZIGE Zeile
+`✅ 12 Geräte gefunden (zuletzt 16:25:41 Uhr).` — großes Icon, eine Kernzahl,
+Zeitstempel der letzten Suche, KEIN Aufzählungssatz. **Ursprung geklärt
+(20.08.2026): Dashboards Tile-Modul, DiscoveryResult-Panel** — dessen Muster
+existierte schon vor dieser Konvention genau in dieser Form.
+
+Jedes Modul mit einer Discovery-/Geräte-such-Funktion baut sein Status-Panel
+nach demselben Schema:
+1. **Button zuerst** ("🔎 Jetzt neu suchen" / "Geräte jetzt suchen" o. ä.),
+   danach erst die Statuszeile darunter (nicht umgekehrt).
+2. **Eine Kopfzeile**, exakt im Muster `<Icon> <Zahl> <Was> gefunden (zuletzt
+   <HH:MM:SS> Uhr).` — `✅` bei Erfolg (mind. 1 gefunden), `⚠️` bei 0 gefunden
+   trotz vorheriger Suche, `ℹ️` wenn noch nie gesucht wurde. Erfordert ein
+   eigenes `RegisterAttributeInteger('LastDiscoveryTs', 0)`, bei jeder Suche
+   mit `time()` aktualisiert.
+3. **Technische Detailaufschlüsselung** (je Partnermodul-Typ, Instanz-IDs,
+   Verbund-Gesundheit) bleibt erhalten, wandert aber in ein eingeklapptes
+   Unter-Panel ("Details je Partnermodul-Typ" o. ä.) statt Teil der Kopfzeile
+   zu sein — Diagnosewert bleibt, drängt sich aber nicht mehr vor die
+   Kernaussage.
+
+Referenzimplementierung: EMS' `getDiscoverySummaryLine()` + das umgebaute
+"🔗 Verbund-Status"-Panel in `GetConfigurationForm()` (`module.php`, 0.21.5).
+
+**Ergänzung fuer passive Erkennung** (CometWiFi, 20.08.2026): nicht jedes Modul hat einen
+aktiven "Jetzt suchen"-Knopf — z. B. wenn jede Abfrage ein Batteriegeraet unnoetig weckt,
+bleibt die Erkennung rein passiv (wartet auf eingehende Meldungen). In diesem Fall **entfaellt
+der Button**, und "zuletzt HH:MM:SS Uhr" bezieht sich auf die letzte EMPFANGENE Meldung, nicht
+auf eine Suche — das gehoert als kurzer Halbsatz ins eingeklappte Detail-Panel, damit das
+fehlende Bedienelement nicht wie ein Versaeumnis wirkt.
+
+**Stolperstein, verbundweit relevant:** der Zeitstempel muss bei JEDER Meldung/jedem Fund
+fortgeschrieben werden, nicht nur beim allerersten — sonst altert die Kopfzeile sichtbar, waehrend
+das System eigentlich munter weiterläuft (sieht aus wie ein haengender Empfang, obwohl alles
+funktioniert). Mit einem Test/einer Gegenprobe gegen genau diesen Fall absichern (CometWiFi: 7
+eigene Pruefungen dafuer).
 
 ## Grundregel: keine eigene Anlage als Norm annehmen (27.07.2026)
 
@@ -380,8 +495,110 @@ jedem neuen Modul von Anfang an einhalten:
     Zweite Person/Session prüfen lassen, wo möglich (heute z. B. Dashboard/InverterHub
     gegenseitig) — wer das Formular selbst gebaut hat, übersieht die eigenen blinden Flecken
     strukturell am ehesten, gerade weil die eigene Anlage den Fehler nie auslöst.
+13. **Jede Aktion (Button/`RequestAction`) muss eine sichtbare Rückmeldung geben** (20.08.2026,
+    verbindlich für alle Module — siehe eigener Abschnitt "Sichtbare Rückmeldung bei jeder
+    Aktion" weiter unten). Vor jeder Veröffentlichung: jeden Button im Formular durchklicken
+    und konkret prüfen — ändert sich sichtbar etwas (Text, Popup, Status), oder sieht es aus,
+    als wäre nichts passiert?
 
 Details und Quellenzuordnung je Punkt: Memory `nrg-stack-store-review-erkenntnisse`.
+
+## Sichtbare Rückmeldung bei jeder Aktion (verbindlich, 20.08.2026)
+
+Ausgangspunkt: zwei Live-Funde an EMS selbst am selben Tag — der "🔎 Jetzt neu suchen"-Button
+aktualisierte serverseitig alles korrekt, aber das offene Formular zeigte weiter "Noch nicht
+gesucht" (SUITE.md Stolperfalle 12); der "📅 Tagesplan neu berechnen"-Button gab überhaupt
+keine Rückmeldung. Dietmars Formulierung: *"Rückmeldungen bei allen Aktionen, damit man sieht,
+dass etwas passiert ist."* Das ist keine Empfehlung mehr, sondern eine **Pflicht für jeden
+Button/jede `RequestAction`** in jedem NRG-Stack-Modul, unabhängig davon, ob die Aktion
+fehlschlagen kann oder nicht — auch ein Erfolg ohne jede sichtbare Reaktion wirkt wie ein
+Fehlschlag.
+
+**Zwei zulässige Muster, je nach Aktionstyp:**
+
+1. **Einmalige Aktion mit einem klaren Ergebnis** (Neuberechnung, Test-Verbindung, manueller
+   Trigger) — die aufgerufene Methode gibt einen menschenlesbaren Ergebnistext zurück
+   (✅/⚠️/⛔/ℹ️-Präfix), der `onClick` lautet `echo Prefix_Methode($id, ...);` statt nur
+   `Prefix_Methode($id, ...);` — erzeugt sofort ein Popup mit dem Ergebnis. Kein neues
+   Formularfeld nötig. Referenz: EMS' `BuildDayPlan()` (0.21.11), Vorbild war der schon
+   länger bestehende "Status anzeigen"-Button.
+2. **Wiederkehrender/dauerhafter Status** (Geräte-Discovery, Verbindungsstatus, laufender
+   Prozess) — eigenes benanntes `Label` im Formular plus `UpdateFormField('<Name>', 'caption',
+   $neuerText)` am Ende der aufgerufenen Methode (siehe SUITE.md Stolperfalle 12 für Details
+   und die `ReloadForm()`-Alternative). Referenz: EMS' `getDiscoverySummaryLine()` (0.21.7).
+
+**Faustregel zur Wahl:** Führt der Button eine einmalige Aktion mit einem Ergebnis aus, das
+man einmal lesen und dann wegklicken will → Muster 1 (`echo`). Zeigt ein Formularfeld einen
+Zustand, der auch ohne den Button-Klick relevant bleibt (z. B. "wie viele Geräte sind gerade
+verbunden") → Muster 2 (`UpdateFormField`).
+
+**Muster 3: WebFront-Kachel/`RequestAction()` ohne Formular-Kanal** (WPHub, 20.08.2026 —
+berechtigte Nachfrage zum Geltungsbereich: gilt die Konvention auch für Steuerelemente
+AUSSERHALB des Konfigurationsformulars, z. B. Slider/Schalter auf einer WebFront-Kachel, wo es
+weder `echo`-Popup noch ein zusätzliches `Label` gibt?). **Ja, die Konvention gilt auch dort**
+— der Mechanismus ist zwangsläufig ein anderer, weil WebFront-Kacheln keinen Popup-/Label-Kanal
+haben, aber das Prinzip bleibt: der Nutzer muss ohne Nachdenken sehen, ob die Aktion griff.
+- **Erfolg:** `SetValue()` auf die tatsächlich bestätigte Variable — der Schalter/Slider zeigt
+  danach den wirklich erreichten Zustand, nicht nur den angeforderten.
+- **Fehlschlag:** die Variable NICHT auf dem angeforderten (aber nicht erreichten) Wert stehen
+  lassen — explizit auf den zuletzt bestätigten Ist-Wert zurücksetzen, damit der Regler/Schalter
+  sichtbar "zurückspringt" statt einen nie eingetretenen Erfolg vorzutäuschen. Das sichtbare
+  Zurückspringen IST hier die Rückmeldung — kein Popup nötig oder möglich. Zusätzlich wie gehabt
+  eine Protokollzeile fürs Debugging, aber die reicht allein NICHT (die sieht der Nutzer im
+  WebFront nicht direkt).
+
+**Muster 4: Direktaufruf einer IPS-Kernfunktion (kein eigener Modul-Wrapper)** (CometWiFi,
+20.08.2026, am Beispiel des "🔄 Übernehmen erzwingen"-Buttons `IPS_ApplyChanges($id)`). Eine
+Kernfunktion wie `IPS_ApplyChanges()` hat keine eigene Modulmethode, die einen Ergebnistext
+liefern könnte — die Rückmeldung MUSS deshalb direkt im `onClick` selbst mitgebracht werden,
+z. B. `IPS_ApplyChanges($id); echo '✅ ApplyChanges() ausgeführt.';`. Zusätzlich gilt: **bevor
+so ein bequemer "spart mir Formular-Anfassen"-Button eingebaut wird, ehrlich dokumentieren, ob
+die aufgerufene Funktion in diesem Modul wirklich folgenlos ist** — bei Modulen mit
+Aktor-Charakter (z. B. Batteriegeräte, die durch jede Abfrage geweckt werden) lädt ein
+bequemer Knopf zum Mehrfachklicken ein. Ein kurzer Hinweistext direkt am Button ("sendet keine
+Befehle, wendet nur die gespeicherten Einstellungen an") gehört dazu, nicht nur der Klick
+selbst.
+
+**Pflicht-Check vor jeder Veröffentlichung** (siehe auch Store-Review-Checkliste Punkt 13):
+jeden Button im Formular klicken und fragen: *sehe ich JETZT, ohne das Formular neu zu öffnen,
+dass etwas passiert ist?* Wenn nein — Muster 1 oder 2 nachrüsten, je nach Aktionstyp.
+
+**Drei weitere Praxis-Regeln (CometWiFi, 20.08.2026, an einem Batteriegeraete-Modul gehaertet —
+besonders kritisch dort, weil jeder unnoetige Klick ein Geraet unnoetig weckt):**
+
+1. **"Gesendet" ist nicht "beantwortet" — das gehoert in den Text.** Bei allem, was ueber eine
+   Warteschlange, ein Funkprotokoll oder eine Cloud laeuft (verzoegerte Antwort, keine
+   Garantie), waere ein blosses "✅ Erfolg" formal korrekt aber praktisch irrefuehrend — der
+   Nutzer sieht danach unveraenderte Werte und haelt das Modul fuer kaputt. Formulierung
+   stattdessen z. B. "gesendet, Werte erscheinen sobald das Geraet antwortet".
+2. **Bei Sammelaktionen (mehrere Geraete/Instanzen in einem Klick) Zahlen nennen, nicht nur
+   ja/nein.** "An 4 von 5 Geraeten erfolgreich" statt eines pauschalen Hakens — der
+   Teilerfolg ist der haeufigste UND am schwersten zu bemerkende Fall; ein reines
+   "erfolgreich/fehlgeschlagen" kann ihn gar nicht ausdruecken und versteckt das eine
+   Problemgeraet dauerhaft.
+3. **KRITISCH — Text-als-`bool`-Falle bei Methoden, die von einem ANDEREN Modul MASCHINELL
+   aufgerufen werden** (z. B. `*_GetFunctions`-Vertragsmethoden oder sonst irgendein Aufruf,
+   dessen Rueckgabewert programmatisch geprueft wird, nicht nur per `echo` angezeigt). Ein
+   Fehlertext ist ein nicht-leerer `string` und damit in PHP immer `true` — wird eine
+   bool-liefernde Methode auf einen Klartext-Rueckgabewert umgestellt, meldet jeder
+   programmatische Aufrufer ab sofort STILLSCHWEIGEND Erfolg, auch bei einem Fehlschlag. Lösung:
+   fuer maschinelle Aufrufer eine GETRENNTE `bool`-liefernde Methode behalten/anlegen, niemals
+   Erfolg aus einem Anzeigetext zurueckparsen (bricht bei der naechsten Textumformulierung,
+   ohne dass irgendwo etwas rot wird). **Bei EMS besonders relevant**, weil EMS als
+   Koordinator selbst Vertragsmethoden anderer Module aufruft und umgekehrt `EMS_GetSpecialEvents()`
+   von "lernenden Modulen" maschinell konsumiert wird — vor jeder Rueckgabetyp-Aenderung an
+   einer oeffentlichen Methode pruefen, ob sie ausserhalb des eigenen Formulars aufgerufen wird.
+   Audit 20.08.2026: EMS' `BuildDayPlan()` (jetzt `string`-Rueckgabe) wird nirgends
+   programmatisch als `bool` konsumiert, `GetPartners()`/`GetFederationHealth()`/
+   `GetSituation()`/`GetSpecialEvents()` liefern weiterhin strukturierte Daten (keine
+   Klartext-Umstellung) — kein Fund, aber der Check selbst gehoert ab jetzt vor jede
+   Rueckgabetyp-Aenderung.
+4. **Rückmeldung muss auch sagen, ob eine Änderung schon gespeichert ist oder noch
+   "Übernehmen" fehlt** (HeishaMon, 20.08.2026). Ein Button, der eine Liste/ein Feld nur in
+   der GERADE OFFENEN Maske per `UpdateFormField()` ändert (Vorschau, Sortierung o. ä.), ohne
+   dass die Property selbst schon geschrieben ist, muss das im Rückmeldungstext klarstellen —
+   sonst wirkt "sichtbar geändert" wie "gespeichert", und der Nutzer schließt das Formular ohne
+   zu übernehmen, im Glauben es sei bereits fertig.
 
 ## Manifest
 
@@ -389,7 +606,7 @@ Details und Quellenzuordnung je Punkt: Memory `nrg-stack-store-review-erkenntnis
 
 | Modul | Version (Stand 24.07.2026) | Kanal | Verträge (angeboten) |
 |---|---|---|---|
-| EMS | in Entwicklung (19.08.2026: Tagesplan-Umbau, Commits `860c8ba`/`c1a7c39` auf ems-integration, **noch nicht gepusht/nicht mehrtägig live verifiziert**, siehe EMS/CLAUDE.md) | ems-integration | konsumiert alle; künftig `EMS_GetSpecialEvents`. Steuerlogik jetzt vorausschauend: `BuildDayPlan()` plant alle 96 Tages-Viertelstunden aus PT15M-Preisen+PVF+Lastschätzung, sichtbar als Symcon-Wochenplan unter der Instanz (Vorbild: Dietmars Winterskript #55729), `optimize()` fragt nur noch den Plan ab statt live gegen Schwellwerte zu prüfen. Alte `SetECOWindow()`-Planer (GoodWe-ECO-Register, liefen unabhängig vom laufenden `optimize()`) entfernt — vermutliche Ursache für zuvor nicht nachvollziehbares EMS-Verhalten. |
+| EMS | 0.23.1 (21.08.2026: Tagesplan-Umbau + `EMS_GetDayPlan()` fuer Dashboard-Visualisierung + ct/€-Einheiten-Fix + Export-vs-Entladen-Logikfehler behoben + preisbewusste Sicherheitsmarge (bedarfsbasiert), **noch nicht mehrtägig live verifiziert**, siehe EMS/CLAUDE.md) | ems-integration | konsumiert alle; künftig `EMS_GetSpecialEvents`. Steuerlogik jetzt vorausschauend: `BuildDayPlan()` plant alle 96 Tages-Viertelstunden aus PT15M-Preisen (automatisch via `TIBBERGR_GetPriceCurve`, Fallback manuell, korrekt ct→€ umgerechnet)+PVF+Lastschätzung, sichtbar als Symcon-Wochenplan unter der Instanz (Vorbild: Dietmars Winterskript #55729), `optimize()` fragt nur noch den Plan ab statt live gegen Schwellwerte zu prüfen. Alte `SetECOWindow()`-Planer entfernt. `EMS_GetDayPlan()` **1.0** liefert heute+morgen (Zeit/Op/Preis in ct/kWh/simulierter SOC je Slot, plus `priceUnit`-Feld) fuer externe Visualisierung — der native Kalender bleibt auf "heute" begrenzt (Kalender-Typ-Grenze). |
 | InverterHub | 0.74.x-beta.2 (27.07.2026, Commit 2d8228f) | ems-integration | ⚠️ **Bindungsfix vorhanden, Langzeitstabilität noch nicht bestätigt.** `IHUB_GetFunctions` **1.0** live verifiziert, Skript-Schreibzugriff via `IPS_RequestAction($InstanceID, $Ident, $Value)` funktioniert zuverlässig (27.07.2026 live bestätigt: `ctl_work_mode`/`ctl_ems_mode`/`ctl_ems_enable`). Root Cause der wiederholten Bindungsabrisse (4x am 26.07.2026, auch ohne Reload) gefunden und behoben: `EnableAction()` bindet Variablen nur, wenn sie DIREKTES Kind der Instanz sind — die control-Variablen lagen aber in der Unterkategorie "EMS-Steuerung"/`cat_control`. Fix: Variable kurz zur Instanz zurückhängen, binden, zurück in die Kategorie. Vor jedem weiteren Release erneut über mehrere Stunden/Reload-Zyklen verifizieren, bevor die Warnung entfällt. Ident-Tabelle siehe unten. Siehe `nrg-stack-modulverwaltung-instabilitaet`-Memory. |
 | MeterHub | 0.18.0-beta.1 (Build 28) | beta | `MHUB_GetFunctions` **1.1**, `MHUBV_GetFunctions` **1.1** (1.1 = latency/authority/pollInterval/energyKind/sourceCount) |
 | ChargerHub | 0.9.14-beta.1 | ems-integration | `CHUB_GetFunctions` **1.1** (inkl. `managedBy`), Schreibzugriff via `IPS_RequestAction($InstanceID, $Ident, $Value)` (live verifiziert 25.07.2026, echtes Fahrzeug an WB1: 6A/20W → 10A/4310W) |
@@ -400,12 +617,14 @@ Details und Quellenzuordnung je Punkt: Memory `nrg-stack-store-review-erkenntnis
 | WPHub | 0.1.0 Build 2 (10.08.2026, neu) | ems-integration | `WPHUB_GetFunctions` **1.2** (Type=>'heatpump', konsistent zu HeishaMon 1.2). Panasonic Comfort Cloud, `PowerID`/`EnergyID` bewusst 0 (Cloud liefert keine Momentanleistung/kumulativen Zähler, siehe neue Grundregel bei "Gemeinsame Variablenprofile") — noch nicht am echten Konto verifiziert |
 | TibberGridRewards | 2.0.0 main / 2.8.0 beta | Store | `TIBBERGR_GetPriceCurve` **1.1**, `TIBBERGR_GetTariffConfig` **1.1**, `TIBBERGR_GetActiveControls` **1.0**, `TIBBERGR_SetVehicleSetting` (Abfahrtszeit/Mindest-SoC-Präferenz, kein Vertrag mit contractVersion — reverse-engineerte externe API, siehe SUITE.md-Historie) — main ohne Felder → gilt als 1.0 |
 | StromGedacht | 1.3 Store / 1.5.0 beta | Store | `SGW_Update`, DataActions; `SGW_GetState`+`SGW_GetForecast` **1.0** (final freigegeben, Empfehlungscharakter, nur Netzampel planungsrelevant) |
-| Tessie | 2.3.4 main / 2.22.0 beta | Store | `TESSIE_GetVehicleState` **1.1** (ab beta 2.20.0; main ohne Feld → gilt als 1.0, Zusatzfelder erst nach Promotion) |
+| Tessie | 2.3.4 main / 2.22.0 beta, **ems-integration** (Commit c974960, 25.08.2026) | Store / ems-integration | `TESSIE_GetVehicleState` **1.4** auf ems-integration (+ `distanceToHomeKm`/`headingHome`/`expectedHomeArrivalSocPercent`, für EMS-Fahrzeug-Ladebedarf bei Heimkehr); **1.1** auf beta 2.20.0+ (unit-Feld); main ohne Feld → gilt als 1.0 |
 | GleitenderMittelwert | 1.7.1 | Store | (Hilfsmodul, kein Verbund-Vertrag) |
 | GoodweET | Deprecated (2026-07-25) | — | abgelöst durch InverterHub (Adoption abgeschlossen, siehe GoodweET/README.md) |
+| CometWiFi | 0.17.0 (Build 34) | beta + main gleichauf | (Gerätemodul, kein `*_GetFunctions`-Vertrag — Thermostate messen nur Temperatur, keine Leistung). Fünf Instanzen: Thermostat, Konfigurator, Übersichtskachel, Raumkachel, Raum. Anbindung über lokalen MQTT-Broker mit Bridge je Gerät zur Hersteller-Cloud (Hersteller-App bleibt funktionsfähig). Protokoll vollständig reverse engineered, Registerstand in `.docs/protokoll.md`. Schreibrichtungen belegt: Sollwert, Optionen, Urlaub, Wochenprogramm, Geräteuhr. |
 | ModbusSlave (NRGModbusSlave) | 1.4.0 | ems-integration | (Export-Endpunkt: Modbus-TCP-Server für externe Master, kein `*_GetFunctions`-Vertrag) — blue'Log-RPC-Emulation als Direktvermarktungs-Andockpunkt; künftig Quelle für `EMS_GetSpecialEvents` (`source: 'marketer'`) |
 | NRGDashboard | 0.1.0-beta.1 | beta | (Darstellungsschicht, kein Datenvertrag — konsumiert alle *_GetFunctions/GetState) |
 | Szenariorechner | 0.2.0-beta.1 | ems-integration | (Analysewerkzeug, kein Datenvertrag — konsumiert Tibber/Prognose/Archive Control) |
+| StrukturHub | 0.1 (28.08.2026, Vertrag eingefroren nach Feedback von EMS/MeterHub/Dashboard, Commit b285fa9 auf main/beta/ems-integration) | main / beta / ems-integration | `STRUKT_GetStructure($id): string` **1.0**, **final** (JSON-STRING, kein Array — `structureChangedAt` (Unix-ts, aendert sich nur bei echter inhaltlicher Aenderung) → `levels[]`/`rooms[]` mit persistenten, umbenennungsstabilen Keys, `rooms[]` zusaetzlich `roomType`/`order`, `deviceInstanceIDs` dedupliziert+bereinigt, Variablen-Links auf ihre Elterninstanz aufgeloest statt verworfen). Objektbaum-Konventions-/Gerüst-Modul, siehe eigener Abschnitt unten |
 
 Das erste **abgeschlossene** Suite-Release wird ausgerufen, wenn ein Satz von Ständen
 gemeinsam an Dietmars Anlage verifiziert ist; ab dann wird je Release eine neue
@@ -536,6 +755,31 @@ sein sollen, dürfen NICHT nur als Buttons/Schalter im Kachel-HTML existieren
 `EnableAction()` (Boolean-Switch oder Integer+Enumeration für mehrere
 Aktionen). Liegen die zugrundeliegenden Daten in einer anderen Instanz,
 `IPS_CreateLink()` (Verknüpfung) verwenden, nicht kopieren.
+**Klarstellung, in zwei Schritten korrigiert (Prognose-Sitzung, 25.08.2026,
+zweiter Durchgang nach Dashboard-Korrektur):** Der native Vergrößern-
+Doppelpfeil zeigt zwar nie das eigene `module.html`, aber automatisch die
+Standardansicht der Instanz-**Variablen** (mit ihren Profilen als Schalter/
+Dropdown/Zahlenfeld) — genau das ist der bereits bewährte, richtige Weg für
+"Einstellungen hinter dem Doppelpfeil": Statt `RegisterPropertyX()` +
+Konsolenformular fürs WebFront-relevante Einstellungen `RegisterVariable
+Boolean()`/`RegisterVariableInteger()` + `EnableAction($ident)` verwenden
+(ggf. eigenes Integer-Profil für Auswahlwerte, damit es als Dropdown statt
+Rohzahl erscheint) — die Variable erscheint dann automatisch in der
+aufgezogenen Ansicht, kein eigenes Overlay nötig. `RequestAction()` prüft
+per `in_array($Ident, [...])`, ruft `SetValue()`, löst ggf. Folgeaktionen
+aus, dann `Render()`. Referenz: `NRGDashboardHeatSchema/module.php`,
+`Create()` ab Zeile ~145/~190, `RequestAction()` ab Zeile 514.
+**Falle dabei (CometWiFi-Fund, 16.08.2026):** Default-Werte nur setzen, wenn
+die Variable NEU angelegt wird (`IPS_GetObjectIDByIdent`-Check vorher) —
+`Create()` läuft bei jedem Symcon-Neustart erneut, ein unbedingtes
+`SetValue()` würde manuelle Nutzereinstellungen bei jedem Neustart
+zurücksetzen.
+Der `requestAction(ident,value)`(JS)→`RequestAction()`(PHP)-Kanal aus dem
+eigenen `module.html` (`IPS_SetProperty()`+`IPS_ApplyChanges()` darin, kein
+stilles Hintergrund-Speichern wie das in Punkt 1 der Store-Review-Checkliste
+verbotene Muster, da ein bewusster Nutzer-Klick es auslöst) bleibt richtig —
+aber nur für ein SELBST GEBAUTES Overlay/Panel INNERHALB der normal-großen
+eigenen Kachel, nicht für "hinter dem Doppelpfeil".
 
 **11. `Sys_GetURLContentEx()` kann kein POST — `Method`/`Content`/`Header`-Schlüssel
 werden STILLSCHWEIGEND ignoriert, es geht immer ein GET raus.** Live gefunden
@@ -548,6 +792,143 @@ Ebene A) in der ersten Fassung (1.18.0). **Loesung:** PHP-Streams
 (`file_get_contents()` + `stream_context_create()`) oder `curl` fuer jeden
 Aufruf, der POST/PUT/eigene Header braucht; den HTTP-Aufruf in eine eigene
 (z. B. `protected`) Methode kapseln, damit sie einzeln testbar bleibt.
+
+**12. Ein Formular-Button, der per `RequestAction`/`onClick` eine PHP-Methode aufruft, aktualisiert
+das BEREITS OFFENE Formular im Browser NICHT automatisch — `GetConfigurationForm()` wird nicht
+neu ausgefuehrt.** Live gefunden (EMS, 20.08.2026, an Dietmars Live-Anlage): der "🔎 Jetzt neu
+suchen"-Button rief `EMS_Discover($id)` korrekt auf, Partnermodule/Verbund-Gesundheit wurden
+serverseitig auch korrekt aktualisiert — aber die neu eingefuehrte Status-Kopfzeile (siehe
+"Einheitliche Verbund-Status-Kopfzeile" oben) blieb im Formular dauerhaft auf "Noch nicht
+gesucht" stehen, weil ihr `Label` beim ersten Formular-Aufbau berechnet wurde und seitdem
+eingefroren war. Symptom fuer den Nutzer: es sieht aus, als waere gar nichts passiert, obwohl
+die Aktion serverseitig laengst gelaufen ist — besonders tueckisch bei genau den Statuszeilen,
+die ueberhaupt erst zeigen sollen, ob etwas passiert ist. **Loesung:** jedem `Label`/Feld, dessen
+Inhalt sich durch eine Button-Aktion aendern kann, ein `'name' => '...'` geben, und in der
+aufgerufenen Methode `$this->UpdateFormField('<name>', 'caption', $neuerText);` aufrufen
+(no-op, wenn gerade kein Formular offen ist — gefahrlos immer aufrufbar). Bereits im Repo als
+Muster etabliert (`AckNews()`/`DismissForumHint()` fuer `visible`, jetzt auch fuer `caption` bei
+`Discover()`/`StartBatteryBoost()`/`StopBatteryBoost()`) — bei jedem neuen Button mit
+Formular-Sichtbarkeit pruefen, ob ein `UpdateFormField()` fehlt. **Gleichwertige Alternative**
+(InverterHub, bestaetigt 20.08.2026): `$this->ReloadForm()` am Ende des Handlers erzwingt einen
+kompletten `GetConfigurationForm()`-Neuaufbau, dann brauchen ALLE Felder darin kein einzelnes
+`UpdateFormField()` mehr — einfacher bei vielen betroffenen Feldern, aber teurer (baut das ganze
+Formular neu), `UpdateFormField()` bleibt die gezieltere Wahl bei wenigen Feldern.
+**Wichtiger Kaveat gegen `ReloadForm()`** (MeterHub, 20.08.2026): ein kompletter Formular-
+Neuaufbau verwirft dabei auch alle vom Nutzer bereits getippten, aber noch nicht via
+"Übernehmen" gespeicherten Eingaben in ANDEREN Feldern — z. B. Start-/End-IP, die man gerade
+erst eingetippt hat, bevor man auf "Netzwerk durchsuchen" klickt. Genau dort ist `ReloadForm()`
+die FALSCHE Wahl, `UpdateFormField()` auf nur das betroffene Statusfeld die richtige. Faustregel:
+`ReloadForm()` nur, wenn der Button selbst am ehesten der einzige Ort ist, an dem gerade etwas
+eingegeben wird (z. B. reine Aktions-Panels ohne parallele Text-/Zahlen-Eingabefelder).
+
+**Drei Praxis-Ergaenzungen (CometWiFi, 20.08.2026, am eigenen Live-Fund + Pruefstand
+gehaertet):**
+1. **Kopfzeile und die dazugehoerige Liste/Detailansicht immer GEMEINSAM auffrischen, nie
+   einzeln.** Zieht man nur die Kopfzeile nach, kann sie eine andere Zahl zeigen als die Liste
+   darunter (z. B. "10 gefunden" ueber einer Liste mit 9 Eintraegen) — das ist schlechter als
+   beides veraltet zu lassen, weil es aktiv falsch wirkt statt nur alt. Bei Update()-Feldern in
+   EMS gilt das analog: Kopfzeile + Verbund-Gesundheit + Partnerdetails werden deshalb bewusst
+   gemeinsam in einem `Discover()`-Aufruf aktualisiert, nicht einzeln je nach Bedarf.
+2. **Reihenfolge: erst der Zustand speichern, DANN auffruellen — nie umgekehrt.** Wer vor dem
+   Speichern auffrischt, zeigt den Stand von VOR der aktuellen Aktion (bei einer Suche also das
+   vorletzte Ergebnis) — ein leicht zu uebersehener Fehler, weil das Auffrischen gedanklich zur
+   Aktion gehoert und deshalb gern direkt hinter den Aufruf statt hinter die Zustandsaenderung
+   rutscht.
+3. **Die Falle greift nur, wo das Modul selbst aktiv mitbekommt, dass sich etwas geaendert hat**
+   (ueber einen Button-Handler, einen Timer-Zyklus, oder einen eingehenden Nachrichtenpfad wie
+   MQTT). Ein reiner Anzeige-Zaehler, der bei jedem `GetConfigurationForm()`-Aufbau live ueber
+   den Objektbaum zaehlt (z. B. `IPS_GetInstanceListByModuleID()` direkt im Formularaufbau, ohne
+   eigenen Cache/Zeitstempel), hat keinen sinnvollen Zeitpunkt zum Nachziehen und braucht auch
+   keinen — dort zeigt das Formular beim naechsten OEFFNEN ohnehin den frischen Stand.
+
+**13. Der `@`-Fehlerunterdrueckungs-Operator vor einer IPS-API-Funktion kann einen kompletten
+Feature-Ausfall lautlos verschwinden lassen.** Live gefunden (EMS, 20.08.2026): `BuildDayPlan()`
+lief laut Log erfolgreich und fand echte Preisdaten, aber der WebFront-Kalender ("EMS Tagesplan")
+blieb trotzdem leer — Ursache war `@IPS_SetEventScheduleGroupPoint(...)` in `writeDayPlanEvent()`.
+Schlaegt der Aufruf fehl (aus welchem Grund auch immer), verschluckt `@` das komplett: kein
+Rueckgabewert-Check, kein Log-Eintrag, keine Exception — nur ein leises "es passiert einfach
+nichts", das der Nutzer selbst entdecken muss. **Regel: `@` nie vor einer IPS-API-Funktion
+verwenden, deren Erfolg fuer eine sichtbare Funktion noetig ist** — stattdessen Rueckgabewert
+pruefen (die meisten `IPS_Set*`-Funktionen liefern `bool`) und bei `false` explizit loggen, was
+fehlgeschlagen ist. `@` ist nur dort vertretbar, wo ein Fehlschlag wirklich folgenlos und erwartbar
+ist (z. B. beim Aufraeumen eines moeglicherweise schon geloeschten Objekts).
+
+**14. `IPS_SetEventScheduleGroup($EventID, $Group, $Days)`: `$Days` ist eine 7-Bit-
+Wochentagsmaske (Bit0=Montag..Bit6=Sonntag), gueltiger Bereich 0-127 -- NICHT 65535.**
+Live gefunden (EMS, 20.08.2026, direkte Folge des Stolperfalle-13-Fixes: der Aufruf lief
+dadurch ueberhaupt erstmals wirklich durch und deckte diesen zweiten, aelteren Fehler sofort
+auf). `65535` (16 Bit, "alle Bits gesetzt") war eine naheliegende, aber falsche Annahme fuer
+"alle Wochentage" -- IPS quittiert das mit `"Day" ausserhalb des gueltigen Bereichs`. Korrekt
+fuer "alle 7 Tage" ist `127`. Gilt fuer jedes Modul, das Wochenplan-Events (`IPS_CreateEvent(2)`)
+programmatisch befuellt, nicht nur fuer EMS.
+
+**15. "Keine Daten" und "Wert ist tatsaechlich 0" muessen unterscheidbar bleiben, sonst
+interpretiert die Entscheidungslogik eine Datenluecke als echten Extremwert.** Live gefunden
+(EMS, 20.08.2026): `parsePT15M()` fuellte Zeitslots ohne echte Tibber-Preisangabe mit `0.0` --
+ein Preis von exakt 0ct ist aber immer guenstiger als jede Einspeiseverguetung, was
+`BuildDayPlan()` faelschlich dazu brachte, Abendstunden OHNE Preisdaten als "Export" statt
+"Automatik" zu planen. Fehlende Daten wurden wie ein reales Sonderangebot behandelt. Regel:
+jedes Array/jede Kurve, die aus einer externen Quelle mit LUECKEN befuellt wird (Preise,
+Messwerte, Prognosen), MUSS fehlende Eintraege als `null` (oder einen anderen eindeutig
+unterscheidbaren Sentinel) fuehren, NIE als `0` oder einen anderen "harmlos wirkenden"
+Platzhalter -- jede Entscheidungslogik, die diese Werte konsumiert, muss `null` explizit
+abfangen (z. B. "keine Daten -> Automatik/Ueberspringen"), bevor sie in einen Schwellenwert-
+Vergleich einfliessen. Gilt fuer jedes Modul mit zeitreihenartigen Daten, nicht nur fuer PT15M-
+Preise.
+
+**16. Einheiten zwischen Verbund-Verträgen NIE annehmen, immer explizit verifizieren --
+besonders bei Geldbetraegen (ct vs. EUR).** Live gefunden (EMS, 20.08.2026, aufgedeckt durch
+Dashboards neues Tagesplan-Diagramm): Tibber Grid Reward liefert `TIBBERGR_GetPriceCurve()`s
+`price`-Feld bewusst in **ct/kWh**, EMS' eigene Preisschwellen (`TIB_Threshold_*`,
+`VAR_TIB_Feed_Tariff`) sind als **EUR/kWh**-Dezimalzahl konfiguriert -- niemand hatte das
+explizit gegengeprueft, sondern beim automatischen Preis-Abruf (0.22.1) stillschweigend
+dieselbe Einheit wie bei den bestehenden Properties angenommen. Ergebnis: ein glatter
+Faktor-100-Fehler in JEDEM Preisvergleich, unauffaellig genug, um durch alle bisherigen
+Pruefungen zu rutschen (Werte blieben plausible Zahlen, nur eben 100x zu gross -- kein Crash,
+keine Fehlermeldung, nur systematisch falsche Entscheidungen). Erst eine Visualisierung
+(Diagramm mit lesbarer Achsenbeschriftung) machte den Fehler auf einen Blick sichtbar, den
+reiner Text/Logs nicht gezeigt haetten. **Regel: bei jeder neuen Automatik-Anbindung an einen
+Verbund-Vertrag explizit dokumentieren (im Code-Kommentar UND in SUITE.md), in welcher Einheit
+jedes Geld-/Mengenfeld geliefert wird -- im Zweifel beim anbietenden Modul nachfragen, nie
+raten.** Gilt fuer jedes Feld mit physikalischer Einheit (ct/EUR, W/kW, Wh/kWh, ...), nicht nur
+fuer Preise. **Noch robuster als ein Kommentar** (Dashboard, 20.08.2026): ein selbstdokumentierendes
+Einheiten-Feld direkt im Vertrag (z. B. `priceUnit` in `EMS_GetDayPlan()`), das der Konsument
+AUSWERTET statt die Einheit fest anzunehmen -- macht den Vertrag robust gegen kuenftige
+Einheiten-Aenderungen des Anbieters, ohne dass der Konsument seinen Code manuell nachziehen muss.
+
+**17. Ein Skript ohne öffnenden `<?php`-Tag am Anfang läuft in IPS lautlos OHNE
+jede PHP-Ausführung durch — kein Syntaxfehler, keine "defekt"-Meldung, einfach
+gar nichts.** Live gefunden (Tibber Grid Reward, 25.08.2026, beim Aufbau eines
+Backfill-Skripts für die Preis-Archivierung) — kostete eine Weile Fehlersuche,
+bis der Nutzer selbst drauf kam. Passt zum in dieser Sitzung wiederholt
+beobachteten Muster "Skript meldet ✅ Erfolgreich, hat aber sichtbar nichts
+bewirkt" — fehlendes `<?php` ist eine mögliche, leicht zu übersehende Ursache
+dafür, neben echten Automatisierungs-Tool-Unzuverlässigkeiten. **Regel:** Bei
+jedem neu geschriebenen/generierten Skript, das trotz "Erfolgreich" keine
+sichtbare Wirkung zeigt, zuerst den öffnenden `<?php`-Tag prüfen, bevor man
+tiefer nach Logikfehlern oder Verbindungsproblemen sucht.
+
+**18. Kalendertag-/Slot-Grenzen NIE über eine feste Sekundenzahl wie
+`$start + 86400` oder `Date.now() - N*86400000` berechnen -- ein Tag hat nicht
+immer 86400 Sekunden.** Verbundweite Prüfung, von Dietmar via Dashboard
+angestoßen (25.08.2026), nachdem er selbst einen Sommer-/Winterzeit-Bug bei
+Dashboard bemerkt hatte. An den zwei DST-Übergangstagen im Jahr (23h-Tag im
+März, 25h-Tag im Oktober) verrutscht jede Slot-zu-Uhrzeit-Zuordnung, die von
+"1 Tag = 86400s" ausgeht -- Symcon selbst stellt die Systemzeit automatisch
+um, das schützt aber nicht vor eigener fester Sekundenarithmetik. Bei EMS live
+bestätigt und behoben (0.24.x): `GetDayPlan()`s Slot→Zeitstempel-Mapping
+(`$baseToday + $slot*900` für 96 Viertelstunden) und `getPvStartTomorrowTs()`
+(`$midnight + $i*900`) nutzten beide diese Annahme. **Fix:** echte Wanduhrzeit
+über `mktime($stunde, $minute, 0, $monat, $tag, $jahr)` konstruieren statt
+Sekunden zu einem Basis-Zeitstempel zu addieren -- `mktime()` löst DST für das
+Kalenderdatum korrekt auf (siehe `slotTimestamp()`-Hilfsfunktion). **Nicht
+betroffen:** reine Sekunden-**Deltas** zwischen zwei bereits bekannten
+Timestamps (z. B. Preisfenster-Dauer), sowie IPS' eigener Wochenplan-
+Mechanismus (`IPS_SetEventScheduleGroupPoint()`), der ohnehin mit Stunde/
+Minute statt Sekunden arbeitet und DST intern selbst auflöst. **Regel:** Jedes
+Modul, das Tages-/Wochen-/Monatsgrenzen oder Slot-Raster berechnet, prüft
+seinen Code auf `+86400`/`*86400`/feste Tagessekundenzahlen und ersetzt sie
+durch `strtotime('+1 day', ...)`/`mktime()`/`DateTime::modify()`.
 
 ## GoodWe-Steuerregister (InverterHub, Stand 27.07.2026)
 
@@ -568,7 +949,10 @@ Ident-Tabelle für `IPS_RequestAction($InstanceID, $Ident, $Value)` auf einer In
 **Vollständige `ctl_ems_mode`-Tabelle (InverterHub, 12.08.2026, wörtlich aus der
 offiziellen GoodWe-Registerdokumentation "Modbus Protocol Hybrid ET/EH/BH/BT",
 ARM205-HV v1.7 (2020-02-26), Tabelle 8-16 "EMS Power Mode" — keine Vermutung mehr,
-ersetzt eine frühere, teils nur namensbasierte Fassung):**
+ersetzt eine frühere, teils nur namensbasierte Fassung. Ergänzung 22.08.2026:
+Ladestrom-Limit-Hinweis bei Modus 2 aus dem Original-Englisch nachgetragen,
+Quelle z.B. https://forum.iobroker.net/assets/uploads/files/1703579717824-arm.745.esg2.et30.modbus.protocol.map.20221231..v1.pdf,
+Tabelle 8-16):**
 
 **Zentraler Mechanismus — Xmax vs. Xset, steht bei jedem Modus einzeln in der
 Tabelle, nicht einheitlich:**
@@ -581,7 +965,7 @@ Tabelle, nicht einheitlich:**
 |---|---|---|---|
 | 0 | Gestoppt | kein Parameter | Systemabschaltung/Standby |
 | 1 | Automatik | kein Parameter | `PBattery = PInv − Pmeter − Ppv`, normale Selbstverbrauchslogik, NUR bei normaler Zählerkommunikation |
-| 2 | Laden-Solar | **Xmax** (Deckel) | `PBattery = Xmax + PV (Charge)`. Xmax = erlaubter Netzbezug, PV bevorzugt. `0` = nur PV, kein Netzbezug |
+| 2 | Laden-Solar | **Xmax** (Deckel) | `PBattery = Xmax + PV (Charge)`. Xmax = erlaubter Netzbezug, PV bevorzugt. `0` = nur PV, kein Netzbezug. **Zusaetzlich durch das Ladestrom-Limit der Batterie begrenzt** ("Charging power will be limited by charging current limit", Originaltext Tabelle 8-16) — Xmax ist NICHT die alleinige Obergrenze |
 | 3 | Entladen+Solar | **Xmax** (Deckel) | `PBattery = Xmax (Discharge)`. Xmax = max. erlaubte Entladeleistung, PV bevorzugt bei begrenzter Einspeisung |
 | 4 | AC-Import | **Xset** (aktives Ziel) | `PBattery = Xset + PV (Charge)`. Xset = bewusst aus dem Netz bezogene Leistung, bevorzugt aus dem Netz gedeckt |
 | 5 | AC-Export | **Xset** (aktives Ziel, **zapft die Batterie an**) | `PBattery = Xset (Discharge)`. "PV power is preferred. When PV energy is insufficient, the battery WILL discharge." **Keine reine Deckelung** — live bestätigt als Ursache für unbeabsichtigte Batterie-Entladung (EMS-Branch-3b-Vorfall, 03./04.08.2026) |
@@ -932,6 +1316,25 @@ URLs im Verbund zeigen direkt auf die kanonischen `NRG*`-Namen (verbundweiter
 Sweep, inkl. der ModulControl-relevanten URLs) — kein neuer Link darf einen
 Alt-Namen verwenden, auch nicht "weil der Redirect ja funktioniert".
 
+**`library.json`→`"name"` (die Zeile, die in der Modulverwaltung erscheint)
+folgt IMMER dem Muster `"NRG-Stack <Modul>"` (Bindestrich + Leerzeichen bei
+"NRG-Stack"), OHNE "for IP-Symcon"-Suffix — Store-Review-Checkliste Punkt 6
+verbietet "IPS"/"Symcon" im Modulnamen.** Live gefunden und einmal selbst
+FALSCH korrigiert (28./29.08.2026): StrukturHub meldete zunaechst einen
+"for IP-Symcon"-Vokabular-Drift bei SteuerboxHub/Szenariorechner (analog zum
+outsideTempID/outdoorTemperatureID-Fall), ich habe daraufhin faelschlich
+"NRG-Stack <Modul> for IP-Symcon" als Regel dokumentiert und sogar EMS'
+eigenen Namen so geaendert — Was-wäre-wenn hat das über Dietmars
+Modulverwaltungs-Screenshot richtiggestellt: das Suffix widerspricht Punkt 6,
+etwa die Haelfte der Module (ChargerHub/InverterHub/MeterHub/MigrationsHub/
+Tessie/WPHub) traegt es zu Unrecht, die andere Haelfte (CometWiFi/Dashboard/
+EMS/HeishaMon/ModbusSlave/Prognose/StromGedacht/Tibber) korrekt ohne. EMS
+zurueckkorrigiert auf `"NRG-Stack EMS"`. **Offene Aufraeumarbeit:** die sechs
+Module mit dem Suffix muessten ihn noch entfernen, jedes in der eigenen
+Sitzung. **Vor dem ersten `library.json`-Commit eines neuen Moduls dieses
+Muster pruefen, nicht den eigenen Repo-Namen 1:1 uebernehmen und kein
+Suffix ergaenzen.**
+
 ## Lizenz
 
 Alle NRG-Stack-Module stehen unter der **PolyForm Noncommercial License 1.0.0** (privat/nicht-kommerziell frei, gewerblich lizenzpflichtig — Kontakt DG65; Spenden willkommen: [paypal.me/DietmarGureth](https://paypal.me/DietmarGureth)). Kanonischer Text: [`LICENSE`](https://github.com/DG65/NRGEMS/blob/main/LICENSE). Der Wechsel wirkt nur nach vorn: Bei bereits im Store veröffentlichten Modulen gilt PolyForm erst ab dem jeweiligen beta→main-Release; die dort noch gelistete Fassung bleibt MIT, und unter MIT bezogene Altversionen bleiben MIT.
@@ -979,6 +1382,19 @@ Reihenfolge und Inhalt:
 Ein Amazon-Wunschlisten-Badge ist bewusst **kein** Standardbestandteil — nur
 falls ein Modul (auf Dietmars ausdrücklichen Wunsch) tatsächlich eine eigene
 Wunschliste verlinken soll.
+
+**Falle beim Erweitern von `check-style.yml`** (CometWiFi, 20.08.2026, an
+941 echten Prüfungen verifiziert): wer über `php -l` hinaus eigene Prüfstände
+in einer Schleife laufen lässt (`for t in ...; do php "$t"; done`), bekommt
+KEINEN verlässlichen Job-Status — die Schleife läuft nach einem Fehlschlag
+einfach weiter, und `set -e` greift hier nicht (nur der Exit-Code des
+*letzten* Laufs zählt). Ein grüner Haken hieße dann "der letzte Prüfstand
+war okay", nicht "alle waren okay". Fehlschläge selbst zählen und am Ende
+explizit `exit 1` bei mindestens einem Fehlschlag — nicht auf `set -e`
+verlassen. Beim einfachen `find ... | xargs -0 -n1 php -l` (EMS' Vorlage)
+unproblematisch, da `xargs` selbst bei einem Fehlschlag korrekt nicht-null
+zurückgibt — die Falle greift erst, sobald jemand eine eigene Schleife
+darum baut.
 
 ## Verweis in den Modulen
 
