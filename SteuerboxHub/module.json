@@ -5,7 +5,9 @@
   "vendor": "",
   "aliases": [
     "SteuerboxHub",
-    "Netzbetreiber-Steuerung (§14a EnWG)"
+    "Netzbetreiber-Steuerung (§14a EnWG)",
+    "NRGSteuerboxHub",
+    "NRG-Stack SteuerboxHub"
   ],
   "url": "https://github.com/DG65/NRGSteuerboxHub",
   "parentRequirements": [],

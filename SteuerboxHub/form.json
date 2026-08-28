@@ -1,0 +1,184 @@
+{
+  "elements": [
+    {
+      "type": "ExpansionPanel",
+      "caption": "📖 Dokumentation & Hilfe",
+      "expanded": false,
+      "items": [
+        { "type": "Label", "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs." },
+        { "type": "Label", "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)." },
+        { "type": "Label", "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe." },
+        { "type": "Label", "caption": "Wichtig: SteuerboxHub erkennt keine Hardware automatisch. Die Eingangsvariablen müssen bereits existieren — angelegt von einem separaten IO-/GPIO-Modul oder einem Modbus-Digitalisierer (z. B. ADAM-Modul, Shelly), der den physischen Kontakt der Steuerbox in eine IP-Symcon-Variable überführt. Hier wird nur eine bestehende Variable verknüpft." },
+        { "type": "Label", "caption": "Last- und Einspeiseachse sind unabhängig voneinander optional — es reicht, nur die tatsächlich vorhandene(n) Eingangsvariable(n) zu verknüpfen. Mindestens eine der beiden muss konfiguriert sein." },
+        { "type": "Label", "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar." },
+        { "type": "Label", "caption": "EEBus-Weg: aktuell nur Konfigurationsgerüst, noch ohne Funktion — siehe Hinweis im EEBus-Abschnitt unten." }
+      ]
+    },
+    {
+      "type": "Select",
+      "name": "Transport",
+      "caption": "Transportweg",
+      "options": [
+        { "caption": "Potentialfreie Kontakte (Rundsteuerempfänger-Vierstufenschema, §14a-Variante)", "value": 0 },
+        { "caption": "EEBus (SPINE/LPC über SHIP, z. B. Theben SELEXA)", "value": 1 }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Potentialfreie Kontakte",
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Klassisches Rundsteuerempfänger-Vierstufenschema (RCR) 0/30/60/100 %, wie es viele Netzbetreiber/Steuerboxen unabhängig vom Hersteller verwenden. Bei der §14a-Variante ersetzt das §14a-Signal die 100-%-Meldung: Kontakt inaktiv = keine Abregelung (100 %), Kontakt aktiv = Lastbegrenzung wirksam. Nur die Eingangsvariable(n) werden hier verknüpft (siehe Hinweis oben) — welches Fabrikat die Steuerbox/der Digitalisierer hat, spielt keine Rolle."
+        },
+        {
+          "type": "SelectVariable",
+          "name": "LoadContactVarID",
+          "caption": "Eingangsvariable Lastbegrenzung aktiv (bool)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "LoadContactInverted",
+          "caption": "Signal invertiert (Ruhekontakt / Öffner)"
+        },
+        {
+          "type": "ExpansionPanel",
+          "caption": "Rechenhilfe Gleichzeitigkeitsfaktor (BNetzA-Formel)",
+          "items": [
+            {
+              "type": "Label",
+              "caption": "Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW — bei mehreren steuerbaren Verbrauchern an diesem Kontakt."
+            },
+            {
+              "type": "NumberSpinner",
+              "name": "GZFConsumerCount",
+              "caption": "Anzahl steuerbarer Verbraucher (n)",
+              "minimum": 1
+            },
+            {
+              "type": "NumberSpinner",
+              "name": "GZFFactor",
+              "caption": "Gleichzeitigkeitsfaktor",
+              "digits": 2,
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "Button",
+              "caption": "Pmin berechnen und übernehmen",
+              "onClick": "SBH_CalculateGZF($id)"
+            }
+          ]
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "LoadPMin",
+          "caption": "Netzwirksamer Leistungsbezug lt. §14a (loadPMin)",
+          "digits": 2,
+          "suffix": " kW",
+          "minimum": 0
+        },
+        {
+          "type": "Select",
+          "name": "FeedInMode",
+          "caption": "Einspeiseseite: Kontaktschema",
+          "options": [
+            { "caption": "Einzelkontakt (ein Trigger, Grenze manuell konfiguriert)", "value": 0 },
+            { "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)", "value": 1 }
+          ]
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInContactVarID",
+          "caption": "Einzelkontakt: Eingangsvariable Einspeisereduktion aktiv (bool)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "FeedInContactInverted",
+          "caption": "Einzelkontakt: Signal invertiert (Ruhekontakt / Öffner)"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "FeedInLimitPercent",
+          "caption": "Einzelkontakt: Einspeisegrenze bei aktivem Signal (feedInLimitPercent)",
+          "digits": 0,
+          "suffix": " %",
+          "minimum": 0,
+          "maximum": 100
+        },
+        {
+          "type": "Label",
+          "caption": "FNN-Dreistufenschema: W3 = 0 % (keine Einspeisung), S1 = 60 %, S2 = 30 %, alle drei offen = 100 % (unbegrenzt). Sind mehrere Kontakte gleichzeitig aktiv, gilt der niedrigste Prozentwert."
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInW3VarID",
+          "caption": "FNN: Eingangsvariable W3 (0 %)"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInS1VarID",
+          "caption": "FNN: Eingangsvariable S1 (60 %)"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInS2VarID",
+          "caption": "FNN: Eingangsvariable S2 (30 %)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "FeedInFNNInverted",
+          "caption": "FNN: Signale invertiert (Ruhekontakte / Öffner)"
+        },
+        {
+          "type": "Label",
+          "caption": "Signalverlust-Wächter: warnt, wenn länger als das Intervall kein Update von einer konfigurierten Eingangsvariable kommt. Der zuletzt bekannte Zustand bleibt dabei unverändert bestehen — kein automatischer Rückfall auf „uneingeschränkt”. 0 = Wächter aus."
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "WatchdogTimeout",
+          "caption": "Maximal erlaubte Signalpause",
+          "suffix": " s",
+          "minimum": 0
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "EEBus",
+      "items": [
+        {
+          "type": "Label",
+          "caption": "ℹ️ Noch nicht implementiert. SHIP/SPINE (TLS, mDNS-Discovery, Zertifikats-Pairing) lässt sich in IP-Symcon/PHP nicht direkt sprechen und bräuchte einen externen Bridge-Dienst. Bewusst zurückgestellt, bis eine reale Steuerbox (z. B. Theben SELEXA) vorliegt und Symcons eigene EEBus-Pläne klarer sind. Diese Felder speichern nur die spätere Bridge-Anbindung vor."
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "EEBusBridgeURL",
+          "caption": "Bridge-URL (http://host:port) — Vorbereitung, noch ohne Funktion"
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "EEBusSKI",
+          "caption": "SKI der Steuerbox (Subject Key Identifier, eindeutige Kennung fürs Zertifikats-Pairing) — Vorbereitung, noch ohne Funktion"
+        }
+      ]
+    },
+    {
+      "type": "Label",
+      "caption": "Zugangsdaten (falls die Bridge ein Token verlangt) werden nicht in Properties gespeichert (IP-Symcon verschlüsselt Properties nicht), sondern als Instanz-Attribut nach der ersten Kopplung."
+    },
+    {
+      "type": "Button",
+      "caption": "🔄 Übernehmen erzwingen (ohne Formularänderung)",
+      "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() ausgeführt.';"
+    }
+  ],
+  "actions": [],
+  "status": [
+    { "code": 102, "icon": "active", "caption": "Aktiv." },
+    { "code": 104, "icon": "inactive", "caption": "Gerüst — Transportweg noch nicht vollständig konfiguriert." },
+    { "code": 201, "icon": "error", "caption": "Kontakte-Weg: Eingangsvariable(n) nicht konfiguriert." },
+    { "code": 204, "icon": "inactive", "caption": "EEBus-Weg: noch nicht implementiert (Wartegerüst, siehe CLAUDE.md)." },
+    { "code": 205, "icon": "error", "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen." }
+  ]
+}
