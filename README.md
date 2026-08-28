@@ -49,4 +49,5 @@ Verträge (TibberGridRewards), nicht hierher.
 
 ## Lizenz
 
-MIT, siehe [LICENSE](LICENSE).
+PolyForm Noncommercial 1.0.0 (privat/nicht-kommerziell frei, gewerbliche Nutzung
+lizenzpflichtig — Kontakt DG65), siehe [LICENSE](LICENSE).
