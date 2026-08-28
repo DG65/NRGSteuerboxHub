@@ -624,6 +624,7 @@ besonders kritisch dort, weil jeder unnoetige Klick ein Geraet unnoetig weckt):*
 | ModbusSlave (NRGModbusSlave) | 1.4.0 | ems-integration | (Export-Endpunkt: Modbus-TCP-Server für externe Master, kein `*_GetFunctions`-Vertrag) — blue'Log-RPC-Emulation als Direktvermarktungs-Andockpunkt; künftig Quelle für `EMS_GetSpecialEvents` (`source: 'marketer'`) |
 | NRGDashboard | 0.1.0-beta.1 | beta | (Darstellungsschicht, kein Datenvertrag — konsumiert alle *_GetFunctions/GetState) |
 | Szenariorechner | 0.2.0-beta.1 | ems-integration | (Analysewerkzeug, kein Datenvertrag — konsumiert Tibber/Prognose/Archive Control) |
+| StrukturHub | 0.1 (28.08.2026, neu, noch nicht an echter Instanz getestet) | ems-integration | `STRUKT_GetStructure($id): string` **1.0** (JSON-STRING, kein Array — Etagen→Räume→`deviceInstanceIDs`, dedupliziert+bereinigt). Objektbaum-Konventions-/Gerüst-Modul, siehe eigener Abschnitt unten |
 
 Das erste **abgeschlossene** Suite-Release wird ausgerufen, wenn ein Satz von Ständen
 gemeinsam an Dietmars Anlage verifiziert ist; ab dann wird je Release eine neue
