@@ -12,10 +12,6 @@
   "url": "https://github.com/DG65/NRGSteuerboxHub",
   "parentRequirements": [],
   "childRequirements": [],
-  "implemented": [
-    "SBH_GetState",
-    "SBH_CalculateGZF",
-    "SBH_CheckWatchdog"
-  ],
+  "implemented": [],
   "prefix": "SBH"
 }
