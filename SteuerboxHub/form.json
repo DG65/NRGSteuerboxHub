@@ -8,6 +8,9 @@
         { "type": "Label", "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs." },
         { "type": "Label", "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)." },
         { "type": "Label", "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe." },
+        { "type": "Label", "caption": "Wichtig: SteuerboxHub erkennt keine Hardware automatisch. Die Eingangsvariablen müssen bereits existieren — angelegt von einem separaten IO-/GPIO-Modul oder einem Modbus-Digitalisierer (z. B. ADAM-Modul, Shelly), der den physischen Kontakt der Steuerbox in eine IP-Symcon-Variable überführt. Hier wird nur eine bestehende Variable verknüpft." },
+        { "type": "Label", "caption": "Last- und Einspeiseachse sind unabhängig voneinander optional — es reicht, nur die tatsächlich vorhandene(n) Eingangsvariable(n) zu verknüpfen. Mindestens eine der beiden muss konfiguriert sein." },
+        { "type": "Label", "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar." },
         { "type": "Label", "caption": "EEBus-Weg: aktuell nur Konfigurationsgerüst, noch ohne Funktion — siehe Hinweis im EEBus-Abschnitt unten." }
       ]
     },
@@ -16,7 +19,7 @@
       "name": "Transport",
       "caption": "Transportweg",
       "options": [
-        { "caption": "Potentialfreie Kontakte (RCR-Schema, §14a-Variante)", "value": 0 },
+        { "caption": "Potentialfreie Kontakte (Rundsteuerempfänger-Vierstufenschema, §14a-Variante)", "value": 0 },
         { "caption": "EEBus (SPINE/LPC über SHIP, z. B. Theben SELEXA)", "value": 1 }
       ]
     },
@@ -26,7 +29,7 @@
       "items": [
         {
           "type": "Label",
-          "caption": "Klassisches RCR-Schema 0/30/60/100 %. Bei der §14a-Variante ersetzt das §14a-Signal die 100-%-Meldung: Kontakt inaktiv = keine Abregelung (100 %), Kontakt aktiv = Lastbegrenzung wirksam."
+          "caption": "Klassisches Rundsteuerempfänger-Vierstufenschema (RCR) 0/30/60/100 %, wie es viele Netzbetreiber/Steuerboxen unabhängig vom Hersteller verwenden. Bei der §14a-Variante ersetzt das §14a-Signal die 100-%-Meldung: Kontakt inaktiv = keine Abregelung (100 %), Kontakt aktiv = Lastbegrenzung wirksam. Nur die Eingangsvariable(n) werden hier verknüpft (siehe Hinweis oben) — welches Fabrikat die Steuerbox/der Digitalisierer hat, spielt keine Rolle."
         },
         {
           "type": "SelectVariable",
@@ -76,23 +79,67 @@
           "minimum": 0
         },
         {
+          "type": "Select",
+          "name": "FeedInMode",
+          "caption": "Einspeiseseite: Kontaktschema",
+          "options": [
+            { "caption": "Einzelkontakt (ein Trigger, Grenze manuell konfiguriert)", "value": 0 },
+            { "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)", "value": 1 }
+          ]
+        },
+        {
           "type": "SelectVariable",
           "name": "FeedInContactVarID",
-          "caption": "Eingangsvariable Einspeisereduktion aktiv (bool)"
+          "caption": "Einzelkontakt: Eingangsvariable Einspeisereduktion aktiv (bool)"
         },
         {
           "type": "CheckBox",
           "name": "FeedInContactInverted",
-          "caption": "Signal invertiert (Ruhekontakt / Öffner)"
+          "caption": "Einzelkontakt: Signal invertiert (Ruhekontakt / Öffner)"
         },
         {
           "type": "NumberSpinner",
           "name": "FeedInLimitPercent",
-          "caption": "Einspeisegrenze bei aktivem Signal (feedInLimitPercent)",
+          "caption": "Einzelkontakt: Einspeisegrenze bei aktivem Signal (feedInLimitPercent)",
           "digits": 0,
           "suffix": " %",
           "minimum": 0,
           "maximum": 100
+        },
+        {
+          "type": "Label",
+          "caption": "FNN-Dreistufenschema: W3 = 0 % (keine Einspeisung), S1 = 60 %, S2 = 30 %, alle drei offen = 100 % (unbegrenzt). Sind mehrere Kontakte gleichzeitig aktiv, gilt der niedrigste Prozentwert."
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInW3VarID",
+          "caption": "FNN: Eingangsvariable W3 (0 %)"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInS1VarID",
+          "caption": "FNN: Eingangsvariable S1 (60 %)"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "FeedInS2VarID",
+          "caption": "FNN: Eingangsvariable S2 (30 %)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "FeedInFNNInverted",
+          "caption": "FNN: Signale invertiert (Ruhekontakte / Öffner)"
+        },
+        {
+          "type": "Label",
+          "caption": "Signalverlust-Wächter: warnt, wenn länger als das Intervall kein Update von einer konfigurierten Eingangsvariable kommt. Der zuletzt bekannte Zustand bleibt dabei unverändert bestehen — kein automatischer Rückfall auf „uneingeschränkt”. 0 = Wächter aus."
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "WatchdogTimeout",
+          "caption": "Maximal erlaubte Signalpause",
+          "suffix": " s",
+          "minimum": 0
         }
       ]
     },
@@ -112,13 +159,18 @@
         {
           "type": "ValidationTextBox",
           "name": "EEBusSKI",
-          "caption": "SKI der Steuerbox (Pairing-Kennung) — Vorbereitung, noch ohne Funktion"
+          "caption": "SKI der Steuerbox (Subject Key Identifier, eindeutige Kennung fürs Zertifikats-Pairing) — Vorbereitung, noch ohne Funktion"
         }
       ]
     },
     {
       "type": "Label",
       "caption": "Zugangsdaten (falls die Bridge ein Token verlangt) werden nicht in Properties gespeichert (IP-Symcon verschlüsselt Properties nicht), sondern als Instanz-Attribut nach der ersten Kopplung."
+    },
+    {
+      "type": "Button",
+      "caption": "🔄 Übernehmen erzwingen (ohne Formularänderung)",
+      "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() ausgeführt.';"
     }
   ],
   "actions": [],
@@ -126,6 +178,7 @@
     { "code": 102, "icon": "active", "caption": "Aktiv." },
     { "code": 104, "icon": "inactive", "caption": "Gerüst — Transportweg noch nicht vollständig konfiguriert." },
     { "code": 201, "icon": "error", "caption": "Kontakte-Weg: Eingangsvariable(n) nicht konfiguriert." },
-    { "code": 204, "icon": "inactive", "caption": "EEBus-Weg: noch nicht implementiert (Wartegerüst, siehe CLAUDE.md)." }
+    { "code": 204, "icon": "inactive", "caption": "EEBus-Weg: noch nicht implementiert (Wartegerüst, siehe CLAUDE.md)." },
+    { "code": 205, "icon": "error", "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen." }
   ]
 }
