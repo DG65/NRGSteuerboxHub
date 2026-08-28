@@ -1317,17 +1317,23 @@ Sweep, inkl. der ModulControl-relevanten URLs) — kein neuer Link darf einen
 Alt-Namen verwenden, auch nicht "weil der Redirect ja funktioniert".
 
 **`library.json`→`"name"` (die Zeile, die in der Modulverwaltung erscheint)
-folgt IMMER dem Muster `"NRG-Stack <Modul> for IP-Symcon"` (Bindestrich +
-Leerzeichen bei "NRG-Stack", Leerzeichen vor "for").** Live gefunden
-(StrukturHub, 28.08.2026): kein Modul dokumentierte dieses Muster bisher
-explizit, dadurch entstand Vokabular-Drift wie beim outsideTempID/
-outdoorTemperatureID-Fall — 11 von 13 Modulen nutzen das Muster korrekt, aber
-SteuerboxHub und Szenariorechner (beide nach der Repo-Umbenennung 19.08.
-entstanden) weichen auf `"NRG<Modul> for IP-Symcon"` ab, vermutlich weil sie
-sich am kanonischen Repo-Namen statt an der Mehrheit orientiert haben.
-StrukturHub selbst lief anfangs in dieselbe Falle. **Vor dem ersten
-`library.json`-Commit eines neuen Moduls dieses Muster pruefen, nicht den
-eigenen Repo-Namen 1:1 uebernehmen.**
+folgt IMMER dem Muster `"NRG-Stack <Modul>"` (Bindestrich + Leerzeichen bei
+"NRG-Stack"), OHNE "for IP-Symcon"-Suffix — Store-Review-Checkliste Punkt 6
+verbietet "IPS"/"Symcon" im Modulnamen.** Live gefunden und einmal selbst
+FALSCH korrigiert (28./29.08.2026): StrukturHub meldete zunaechst einen
+"for IP-Symcon"-Vokabular-Drift bei SteuerboxHub/Szenariorechner (analog zum
+outsideTempID/outdoorTemperatureID-Fall), ich habe daraufhin faelschlich
+"NRG-Stack <Modul> for IP-Symcon" als Regel dokumentiert und sogar EMS'
+eigenen Namen so geaendert — Was-wäre-wenn hat das über Dietmars
+Modulverwaltungs-Screenshot richtiggestellt: das Suffix widerspricht Punkt 6,
+etwa die Haelfte der Module (ChargerHub/InverterHub/MeterHub/MigrationsHub/
+Tessie/WPHub) traegt es zu Unrecht, die andere Haelfte (CometWiFi/Dashboard/
+EMS/HeishaMon/ModbusSlave/Prognose/StromGedacht/Tibber) korrekt ohne. EMS
+zurueckkorrigiert auf `"NRG-Stack EMS"`. **Offene Aufraeumarbeit:** die sechs
+Module mit dem Suffix muessten ihn noch entfernen, jedes in der eigenen
+Sitzung. **Vor dem ersten `library.json`-Commit eines neuen Moduls dieses
+Muster pruefen, nicht den eigenen Repo-Namen 1:1 uebernehmen und kein
+Suffix ergaenzen.**
 
 ## Lizenz
 
