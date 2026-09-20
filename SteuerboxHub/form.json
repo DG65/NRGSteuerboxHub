@@ -47,7 +47,7 @@
           "items": [
             {
               "type": "Label",
-              "caption": "Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW — bei mehreren steuerbaren Verbrauchern an diesem Kontakt."
+              "caption": "Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW — bei mehreren steuerbaren Verbrauchseinrichtungen (z. B. Wallbox, Wärmepumpe, Klimagerät, Speicher mit über 4,2 kW) an diesem Kontakt. Der Gleichzeitigkeitsfaktor wird bei Wert 0 automatisch nach der BNetzA-Tabelle ermittelt (2 Geräte: 0,80 bis ab 9 Geräten: 0,45)."
             },
             {
               "type": "NumberSpinner",
@@ -58,7 +58,7 @@
             {
               "type": "NumberSpinner",
               "name": "GZFFactor",
-              "caption": "Gleichzeitigkeitsfaktor",
+              "caption": "Gleichzeitigkeitsfaktor (0 = automatisch nach Tabelle)",
               "digits": 2,
               "minimum": 0,
               "maximum": 1
@@ -66,7 +66,7 @@
             {
               "type": "Button",
               "caption": "Pmin berechnen und übernehmen",
-              "onClick": "SBH_CalculateGZF($id)"
+              "onClick": "SBH_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
             }
           ]
         },

@@ -51,7 +51,7 @@ class SteuerboxHub extends IPSModule
         $this->RegisterPropertyBoolean('LoadContactInverted', false);
         $this->RegisterPropertyFloat('LoadPMin', 4.2);
         $this->RegisterPropertyInteger('GZFConsumerCount', 1);
-        $this->RegisterPropertyFloat('GZFFactor', 1.0);
+        $this->RegisterPropertyFloat('GZFFactor', 0.0); // 0 = automatisch nach BNetzA-Tabelle
         // Einspeiseseite: reale FNN-Steuerboxen (Vorbild: evcc-Referenz-Doku
         // "FNN-Steuerbox via GPIO") melden hier NICHT einen einzelnen binären
         // Trigger, sondern DREI separate Kontakte für die drei Stufen des
@@ -313,11 +313,16 @@ class SteuerboxHub extends IPSModule
         }
     }
 
-    /** Formular-Rechenhilfe: Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW. */
-    public function CalculateGZF()
+    /**
+     * Formular-Rechenhilfe: Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW.
+     * GZF = 0 (Standard) bedeutet automatisch nach BNetzA-Tabelle: max(0,9 - 0,05 × n; 0,45),
+     * also n=2: 0,80 ... n>=9: 0,45 (deckt sich mit dem Symcon-Energiemanager, Quelle KEDi/dena).
+     * Werte kommen direkt aus dem Formular, damit auch ungespeicherte Eingaben zählen.
+     */
+    public function CalculateGZF(int $consumerCount = 1, float $gzfOverride = 0.0)
     {
-        $n   = max(1, $this->ReadPropertyInteger('GZFConsumerCount'));
-        $gzf = $this->ReadPropertyFloat('GZFFactor');
+        $n   = max(1, $consumerCount);
+        $gzf = $gzfOverride > 0 ? min(1.0, $gzfOverride) : max(0.9 - 0.05 * $n, 0.45);
         $pMin = 4.2 + ($n - 1) * $gzf * 4.2;
 
         $this->UpdateFormField('LoadPMin', 'value', round($pMin, 2));
