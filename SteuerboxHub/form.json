@@ -190,12 +190,12 @@
     {
       "code": 104,
       "icon": "inactive",
-      "caption": "Gerüst — Transportweg noch nicht vollständig konfiguriert."
+      "caption": "Noch nicht konfiguriert: keine Eingangsvariable gewählt."
     },
     {
-      "code": 201,
+      "code": 202,
       "icon": "error",
-      "caption": "Kontakte-Weg: Eingangsvariable(n) nicht konfiguriert."
+      "caption": "Eine gewählte Eingangsvariable existiert nicht mehr."
     },
     {
       "code": 205,
