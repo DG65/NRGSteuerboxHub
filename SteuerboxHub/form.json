@@ -5,13 +5,34 @@
       "caption": "📖 Dokumentation & Hilfe",
       "expanded": false,
       "items": [
-        { "type": "Label", "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs." },
-        { "type": "Label", "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)." },
-        { "type": "Label", "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe." },
-        { "type": "Label", "caption": "Wichtig: SteuerboxHub erkennt keine Hardware automatisch. Die Eingangsvariablen müssen bereits existieren — angelegt von einem separaten IO-/GPIO-Modul oder einem Modbus-Digitalisierer (z. B. ADAM-Modul, Shelly), der den physischen Kontakt der Steuerbox in eine IP-Symcon-Variable überführt. Hier wird nur eine bestehende Variable verknüpft." },
-        { "type": "Label", "caption": "Last- und Einspeiseachse sind unabhängig voneinander optional — es reicht, nur die tatsächlich vorhandene(n) Eingangsvariable(n) zu verknüpfen. Mindestens eine der beiden muss konfiguriert sein." },
-        { "type": "Label", "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar." },
-        { "type": "Label", "caption": "EEBus-Weg: aktuell nur Konfigurationsgerüst, noch ohne Funktion — siehe Hinweis im EEBus-Abschnitt unten." }
+        {
+          "type": "Label",
+          "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs."
+        },
+        {
+          "type": "Label",
+          "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)."
+        },
+        {
+          "type": "Label",
+          "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe."
+        },
+        {
+          "type": "Label",
+          "caption": "Wichtig: SteuerboxHub erkennt keine Hardware automatisch. Die Eingangsvariablen müssen bereits existieren — angelegt von einem separaten IO-/GPIO-Modul oder einem Modbus-Digitalisierer (z. B. ADAM-Modul, Shelly), der den physischen Kontakt der Steuerbox in eine IP-Symcon-Variable überführt. Hier wird nur eine bestehende Variable verknüpft."
+        },
+        {
+          "type": "Label",
+          "caption": "Last- und Einspeiseachse sind unabhängig voneinander optional — es reicht, nur die tatsächlich vorhandene(n) Eingangsvariable(n) zu verknüpfen. Mindestens eine der beiden muss konfiguriert sein."
+        },
+        {
+          "type": "Label",
+          "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar."
+        },
+        {
+          "type": "Label",
+          "caption": "EEBus-Anbindung (z. B. Theben SELEXA) ist in Vorbereitung und erscheint hier, sobald sie funktioniert."
+        }
       ]
     },
     {
@@ -19,8 +40,10 @@
       "name": "Transport",
       "caption": "Transportweg",
       "options": [
-        { "caption": "Potentialfreie Kontakte (Rundsteuerempfänger-Vierstufenschema, §14a-Variante)", "value": 0 },
-        { "caption": "EEBus (SPINE/LPC über SHIP, z. B. Theben SELEXA)", "value": 1 }
+        {
+          "caption": "Potentialfreie Kontakte (Rundsteuerempfänger-Vierstufenschema, §14a-Variante)",
+          "value": 0
+        }
       ]
     },
     {
@@ -83,8 +106,14 @@
           "name": "FeedInMode",
           "caption": "Einspeiseseite: Kontaktschema",
           "options": [
-            { "caption": "Einzelkontakt (ein Trigger, Grenze manuell konfiguriert)", "value": 0 },
-            { "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)", "value": 1 }
+            {
+              "caption": "Einzelkontakt (ein Trigger, Grenze manuell konfiguriert)",
+              "value": 0
+            },
+            {
+              "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)",
+              "value": 1
+            }
           ]
         },
         {
@@ -144,30 +173,6 @@
       ]
     },
     {
-      "type": "ExpansionPanel",
-      "caption": "EEBus",
-      "items": [
-        {
-          "type": "Label",
-          "caption": "ℹ️ Noch nicht implementiert. SHIP/SPINE (TLS, mDNS-Discovery, Zertifikats-Pairing) lässt sich in IP-Symcon/PHP nicht direkt sprechen und bräuchte einen externen Bridge-Dienst. Bewusst zurückgestellt, bis eine reale Steuerbox (z. B. Theben SELEXA) vorliegt und Symcons eigene EEBus-Pläne klarer sind. Diese Felder speichern nur die spätere Bridge-Anbindung vor."
-        },
-        {
-          "type": "ValidationTextBox",
-          "name": "EEBusBridgeURL",
-          "caption": "Bridge-URL (http://host:port) — Vorbereitung, noch ohne Funktion"
-        },
-        {
-          "type": "ValidationTextBox",
-          "name": "EEBusSKI",
-          "caption": "SKI der Steuerbox (Subject Key Identifier, eindeutige Kennung fürs Zertifikats-Pairing) — Vorbereitung, noch ohne Funktion"
-        }
-      ]
-    },
-    {
-      "type": "Label",
-      "caption": "Zugangsdaten (falls die Bridge ein Token verlangt) werden nicht in Properties gespeichert (IP-Symcon verschlüsselt Properties nicht), sondern als Instanz-Attribut nach der ersten Kopplung."
-    },
-    {
       "type": "Button",
       "caption": "🔄 Übernehmen erzwingen (ohne Formularänderung)",
       "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() ausgeführt.';"
@@ -175,10 +180,25 @@
   ],
   "actions": [],
   "status": [
-    { "code": 102, "icon": "active", "caption": "Aktiv." },
-    { "code": 104, "icon": "inactive", "caption": "Gerüst — Transportweg noch nicht vollständig konfiguriert." },
-    { "code": 201, "icon": "error", "caption": "Kontakte-Weg: Eingangsvariable(n) nicht konfiguriert." },
-    { "code": 204, "icon": "inactive", "caption": "EEBus-Weg: noch nicht implementiert (Wartegerüst, siehe CLAUDE.md)." },
-    { "code": 205, "icon": "error", "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen." }
+    {
+      "code": 102,
+      "icon": "active",
+      "caption": "Aktiv."
+    },
+    {
+      "code": 104,
+      "icon": "inactive",
+      "caption": "Gerüst — Transportweg noch nicht vollständig konfiguriert."
+    },
+    {
+      "code": 201,
+      "icon": "error",
+      "caption": "Kontakte-Weg: Eingangsvariable(n) nicht konfiguriert."
+    },
+    {
+      "code": 205,
+      "icon": "error",
+      "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen."
+    }
   ]
 }
