@@ -164,7 +164,38 @@ class SteuerboxHub extends IPSModule
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
         $this->injectVersionIntoDocPanel($form);
+        $this->applyFeedInVisibility($form['elements'], $this->ReadPropertyInteger('FeedInMode'));
         return json_encode($form);
+    }
+
+    private const FEEDIN_SINGLE_FIELDS = ['FeedInContactVarID', 'FeedInContactInverted', 'FeedInLimitPercent'];
+    private const FEEDIN_FNN_FIELDS    = ['FeedInFNNLabel', 'FeedInW3VarID', 'FeedInS1VarID', 'FeedInS2VarID', 'FeedInFNNInverted'];
+
+    private function applyFeedInVisibility(array &$items, int $mode): void
+    {
+        foreach ($items as &$el) {
+            $name = $el['name'] ?? '';
+            if (in_array($name, self::FEEDIN_SINGLE_FIELDS, true)) {
+                $el['visible'] = ($mode === 0);
+            } elseif (in_array($name, self::FEEDIN_FNN_FIELDS, true)) {
+                $el['visible'] = ($mode === 1);
+            }
+            if (isset($el['items'])) {
+                $this->applyFeedInVisibility($el['items'], $mode);
+            }
+        }
+        unset($el);
+    }
+
+    /** Formular: zeigt nur die Einspeisefelder, die zum gewählten Kontaktschema passen. */
+    public function ToggleFeedInMode(int $mode)
+    {
+        foreach (self::FEEDIN_SINGLE_FIELDS as $name) {
+            $this->UpdateFormField($name, 'visible', $mode === 0);
+        }
+        foreach (self::FEEDIN_FNN_FIELDS as $name) {
+            $this->UpdateFormField($name, 'visible', $mode === 1);
+        }
     }
 
     private function injectVersionIntoDocPanel(array &$form): void
