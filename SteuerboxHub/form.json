@@ -28,10 +28,6 @@
         {
           "type": "Label",
           "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar."
-        },
-        {
-          "type": "Label",
-          "caption": "EEBus-Anbindung (z. B. Theben SELEXA) ist in Vorbereitung und erscheint hier, sobald sie funktioniert."
         }
       ]
     },
@@ -130,7 +126,7 @@
         {
           "type": "NumberSpinner",
           "name": "FeedInLimitPercent",
-          "caption": "Einzelkontakt: Einspeisegrenze bei aktivem Signal (feedInLimitPercent)",
+          "caption": "Einzelkontakt: Einspeisegrenze bei aktivem Signal (0 = keine Einspeisung erlaubt, 100 = keine Begrenzung)",
           "digits": 0,
           "suffix": " %",
           "minimum": 0,
