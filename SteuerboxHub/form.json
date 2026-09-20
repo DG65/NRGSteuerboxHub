@@ -114,7 +114,8 @@
               "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)",
               "value": 1
             }
-          ]
+          ],
+          "onChange": "SBH_ToggleFeedInMode($id, $FeedInMode);"
         },
         {
           "type": "SelectVariable",
@@ -137,7 +138,8 @@
         },
         {
           "type": "Label",
-          "caption": "FNN-Dreistufenschema: W3 = 0 % (keine Einspeisung), S1 = 60 %, S2 = 30 %, alle drei offen = 100 % (unbegrenzt). Sind mehrere Kontakte gleichzeitig aktiv, gilt der niedrigste Prozentwert."
+          "caption": "FNN-Dreistufenschema: W3 = 0 % (keine Einspeisung), S1 = 60 %, S2 = 30 %, alle drei offen = 100 % (unbegrenzt). Sind mehrere Kontakte gleichzeitig aktiv, gilt der niedrigste Prozentwert.",
+          "name": "FeedInFNNLabel"
         },
         {
           "type": "SelectVariable",
