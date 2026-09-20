@@ -34,7 +34,7 @@
 //                aktuell keinen Fahrplan (Aufwand "extrem hoch", Priorität auf
 //                KNX/Modbus) — ggf. übernimmt Symcon das Thema, bevor wir es
 //                selbst bauen müssen. Bis eine reale SELEXA-Box vorliegt, bleibt
-//                der EEBus-Zweig ein reines Wartegerüst (Status 204).
+//                der EEBus-Zweig ein reines Wartegerüst (Status 104).
 // ===========================================================================
 
 class SteuerboxHub extends IPSModule
@@ -118,9 +118,19 @@ class SteuerboxHub extends IPSModule
         $feedInS2     = $this->ReadPropertyInteger('FeedInS2VarID');
         $feedInWired  = $fnnMode ? ($feedInW3 !== 0 || $feedInS1 !== 0 || $feedInS2 !== 0) : ($feedInVarID !== 0);
 
+        // Noch nichts gewählt: neutral "inaktiv" (104), kein Fehlercode — sonst zählt eine
+        // frisch angelegte Instanz im Integrity-Check als Fehler (Checkliste 9d).
         if ($loadVarID === 0 && !$feedInWired) {
-            $this->SetStatus(201);
+            $this->SetStatus(104);
             return;
+        }
+
+        // Gewählte Variable existiert nicht mehr: echter Konfigurationsmangel, sichtbar melden.
+        foreach ([$loadVarID, $feedInVarID, $feedInW3, $feedInS1, $feedInS2] as $varID) {
+            if ($varID !== 0 && !IPS_VariableExists($varID)) {
+                $this->SetStatus(202);
+                return;
+            }
         }
 
         if ($loadVarID !== 0 && IPS_VariableExists($loadVarID)) {
@@ -151,7 +161,7 @@ class SteuerboxHub extends IPSModule
     private function applyEEBusTransport(): void
     {
         // Wartegerüst — kein Client implementiert, siehe Klassenkommentar.
-        $this->SetStatus(204);
+        $this->SetStatus(104);
     }
 
     // Formular-Reihenfolge (Verbund-Konvention, EMS/Dietmar 24.07.2026):
@@ -215,7 +225,8 @@ class SteuerboxHub extends IPSModule
 
     public function MessageSink($timestamp, $senderID, $message, $data)
     {
-        if ($message !== VM_UPDATE) {
+        // Während des Neuladens liefern die SDK-Aufrufe false statt des Typs (Checkliste 9c).
+        if ($message !== VM_UPDATE || IPS_GetKernelRunlevel() !== KR_READY || !IPS_InstanceExists($this->InstanceID)) {
             return;
         }
 
@@ -373,22 +384,22 @@ class SteuerboxHub extends IPSModule
 
         // EEBus-Weg ist Wartegerüst (siehe Klassenkommentar) — liefert immer
         // "kein Signal aktiv", bis ein Client existiert.
-        $loadActive   = $isContacts && $this->ReadAttributeBoolean('LoadDimmActive');
-        $feedInActive = $isContacts && $this->ReadAttributeBoolean('FeedInDimmActive');
+        $loadActive   = $isContacts && (bool) $this->ReadAttributeBoolean('LoadDimmActive');
+        $feedInActive = $isContacts && (bool) $this->ReadAttributeBoolean('FeedInDimmActive');
 
         return [
             'contractVersion'    => '1.0',
             'source'             => $isContacts ? 'contacts' : 'eebus',
             'loadDimmActive'     => $loadActive,
-            'loadPMin'           => $isContacts ? $this->ReadPropertyFloat('LoadPMin') : 0.0,
-            'loadSince'          => $isContacts ? $this->ReadAttributeInteger('LoadSince') : 0,
+            'loadPMin'           => $isContacts ? (float) $this->ReadPropertyFloat('LoadPMin') : 0.0,
+            'loadSince'          => $isContacts ? (int) $this->ReadAttributeInteger('LoadSince') : 0,
             'feedInDimmActive'   => $feedInActive,
             'feedInLimitPercent' => $isContacts
                 ? ($this->ReadPropertyInteger('FeedInMode') === 1
-                    ? $this->ReadAttributeFloat('FeedInPercent')
-                    : ($feedInActive ? $this->ReadPropertyFloat('FeedInLimitPercent') : 100.0))
+                    ? (float) $this->ReadAttributeFloat('FeedInPercent')
+                    : ($feedInActive ? (float) $this->ReadPropertyFloat('FeedInLimitPercent') : 100.0))
                 : 100.0,
-            'feedInSince'        => $isContacts ? $this->ReadAttributeInteger('FeedInSince') : 0,
+            'feedInSince'        => $isContacts ? (int) $this->ReadAttributeInteger('FeedInSince') : 0,
         ];
     }
 }
