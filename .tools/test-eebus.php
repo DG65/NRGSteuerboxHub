@@ -519,13 +519,13 @@ pruefe(strpos($caps[1], '0.3.0') !== false, 'News-Panel nennt die höchste neue 
 $lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
 $doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($doc, 'SteuerboxHub Version 0.3.0 (Build 3)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+pruefe(strpos($doc, 'SteuerboxHub Version 0.3.1 (Build 4)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
 $fk->AckPurposeIntro();
 $fk->AckNews();
 $fk->AckForumHint();
 $caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
-pruefe($fk->attrs['SeenNews'] === '0.3.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version und blendet sofort aus');
+pruefe($fk->attrs['SeenNews'] === '0.3.1' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.3.1) und blendet sofort aus');
 $fk->attrs['SeenNews'] = '0.2.0';
 $caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 $news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);
@@ -545,6 +545,35 @@ foreach ((new ReflectionClass(SteuerboxHub::class))->getMethods(ReflectionMethod
     }
 }
 pruefe($verstoesse === [], 'Öffentliche SBH_-Funktionen: keine Standardwerte, alle Parameter typisiert (Stolperstein 8/20)' . ($verstoesse ? ': ' . implode(', ', $verstoesse) : ''));
+
+echo " Ohne Gateway keine Begrenzung, neues Gateway beginnt neu (Live-Fund 27.10.2026)\n";
+$gw7 = new FakeGateway(37000);
+$gw7->state['connected'] = true;
+$r7 = sbh(37001, 37000, ['Transport' => 1, 'LoadPMin' => 13.02]);
+$gw7->ereignis(['Event' => 'connection', 'state' => 'connected', 'shipId' => 'Box-A']);
+$gw7->ereignis(lpcWrite(B(37001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 5000, 'scale' => 0]]]));
+$gw7->state['connected'] = false;
+$gw7->ereignis(['Event' => 'connection', 'state' => 'disconnected']);
+vor(4000);
+$r7->CheckEEBus();
+pruefe($r7->GetState()['loadPMin'] === 13.02 && $r7->status === 204, 'Ausgangslage: Steuerbox weg, Ausfallgrenze 13,02 kW');
+$r7->props['EEBusBridgeID'] = 999999;
+$r7->ApplyChanges();
+$st = $r7->GetState();
+pruefe($st['loadDimmActive'] === false && $st['feedInDimmActive'] === false && $r7->status === 104, 'Anbindung entfernt: keine Begrenzung, Status 104 (nicht mehr „Ausfall bei nicht konfiguriert“)');
+$f = json_encode(json_decode($r7->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
+pruefe(strpos($f, 'Ohne EEBUS-Anbindung mit Gateway gilt keine Begrenzung') !== false && strpos($f, 'Ausfallzustand seit') === false, 'Formular sagt dasselbe');
+$gw8 = new FakeGateway(38000);
+$b8 = new TestBridge(138001);
+$b8->parentId = 38000;
+$b8->Create();
+$b8->ApplyChanges();
+$r7->props['EEBusBridgeID'] = 138001;
+$r7->ApplyChanges();
+$z = json_decode($r7->attrs['EEBusState'], true);
+pruefe($z['mode'] === 'unpaired' && $z['limits'][0]['active'] === false && $z['gateway'] === 38000 && $r7->status === 210, 'Anderes Gateway: früherer Zustand verworfen, wartet auf erste Verbindung');
+pruefe($r7->GetState()['loadDimmActive'] === false, 'Keine alte Grenze am neuen Gateway');
+pruefe(count(array_filter($r7->log, function ($l) { return strpos($l, 'früherer Zustand verworfen') !== false; })) === 2, 'Verwerfen protokolliert (erstes und neues Gateway)');
 
 echo " Kontakte-Weg unverändert\n";
 $GLOBALS['VARS'][40010] = true;

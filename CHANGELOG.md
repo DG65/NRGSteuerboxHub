@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen an diesem Modul werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
+## [0.3.1] - 2026-10-27
+
+### Fixed
+- EEBUS ohne Anbindung oder Gateway: keine Begrenzung mehr aus einem früher gespeicherten
+  Zustand (live: Ausfallgrenze 13,02 kW bei Status 104 „nicht konfiguriert“).
+- Anmeldung an einem anderen Gateway verwirft Grenzen, Ausfallwerte und Ausfallzustand
+  der früheren Steuerbox.
+- Formular: PV-Leistung kurz beschriftet, Einheit kWp statt kW.
+
 ## [0.3.0] - 2026-10-27
 
 ### Added

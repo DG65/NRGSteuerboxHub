@@ -243,9 +243,9 @@
         {
           "type": "NumberSpinner",
           "name": "EEBusProductionNominalKw",
-          "caption": "Installierte PV-Leistung (kWp, dieselbe Bezugsgröße wie im EMS)",
+          "caption": "Installierte PV-Leistung",
           "digits": 2,
-          "suffix": " kW",
+          "suffix": " kWp",
           "minimum": 0
         },
         {

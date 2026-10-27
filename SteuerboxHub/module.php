@@ -843,7 +843,8 @@ class SteuerboxHub extends IPSModule
                     $st['mode'] = 'normal';
                     $this->LogMessage('EEBUS: Steuerbox wieder erreichbar, Betrieb ohne Begrenzung bis zum nächsten Grenzwert.', KL_MESSAGE);
                 }
-            } elseif ($st['mode'] === 'normal' && $st['lastAlive'] > 0 && $now - $st['lastAlive'] > self::EEBUS_HEARTBEAT_TIMEOUT_S) {
+            } elseif ($st['mode'] === 'normal' && $st['lastAlive'] > 0 && $now - $st['lastAlive'] > self::EEBUS_HEARTBEAT_TIMEOUT_S
+                && $this->eebusGatewayID() > 0) {
                 $this->eebusEnterFailsafe($st, $now);
             }
 
@@ -883,6 +884,12 @@ class SteuerboxHub extends IPSModule
         $now = $this->now();
         $st  = $this->eebusLoadState();
         $eff = ['loadActive' => false, 'loadW' => 0.0, 'feedInActive' => false, 'feedInPercent' => 100.0];
+
+        // Ohne Anbindung und Gateway ist der EEBus-Weg nicht eingerichtet (Status 104): keine Begrenzung,
+        // auch nicht aus einem früher gespeicherten Zustand (Live-Fund 27.10.2026: Ausfallgrenze bei Status 104).
+        if ($this->eebusGatewayID() === 0) {
+            $st['mode'] = 'none';
+        }
 
         if ($st['mode'] === 'normal') {
             $lc = $st['limits'][self::LIMIT_CONSUMPTION];
@@ -964,7 +971,7 @@ class SteuerboxHub extends IPSModule
             'mode' => 'unpaired', 'connected' => false, 'heartbeatLost' => false, 'trustPending' => false,
             'lastAlive' => 0, 'failsafeSince' => 0, 'lastWriteAt' => 0,
             'remoteShipId' => '', 'remoteUseCases' => [],
-            'registeredWith' => 0, 'entity' => 0, 'registerError' => '',
+            'registeredWith' => 0, 'entity' => 0, 'registerError' => '', 'gateway' => 0,
             'limits' => [
                 self::LIMIT_CONSUMPTION => ['active' => false, 'w' => 0.0, 'until' => 0],
                 self::LIMIT_PRODUCTION  => ['active' => false, 'w' => 0.0, 'until' => 0],
@@ -1058,6 +1065,14 @@ class SteuerboxHub extends IPSModule
 
         $st = $this->eebusLoadState();
         if (is_array($r) && ($r['ok'] ?? false) === true) {
+            if ($st['gateway'] !== $parent) {
+                // Anderes (oder erstes) Gateway: Grenzen, Ausfallwerte und Ausfallzustand einer früheren
+                // Steuerbox gelten hier nicht. Neu beginnen wie eine nie gekoppelte Instanz.
+                $this->WriteAttributeString('EEBusState', '');
+                $st = $this->eebusLoadState();
+                $st['gateway'] = $parent;
+                $this->LogMessage('EEBUS: an Gateway #' . $parent . ' angemeldet, früherer Zustand verworfen.', KL_MESSAGE);
+            }
             $st['registeredWith'] = $parent;
             $st['entity'] = (int) ($r['entity'] ?? 0);
             $st['registerError'] = '';
@@ -1234,7 +1249,10 @@ class SteuerboxHub extends IPSModule
             }
             return self::fmt($l['w'] / 1000) . ' kW' . ($l['until'] > 0 ? ' bis ' . date('d.m.Y H:i', $l['until']) . ' Uhr' : ' (unbefristet)');
         };
-        switch ($st['mode']) {
+        switch ($parent === 0 ? 'none' : $st['mode']) {
+            case 'none':
+                $state = 'ℹ️ Ohne EEBUS-Anbindung mit Gateway gilt keine Begrenzung.';
+                break;
             case 'failsafe':
                 $fsEnd = $st['failsafeSince'] + $this->eebusFailsafeDuration($st);
                 $state = '⛔ Ausfallzustand seit ' . date('d.m.Y H:i', $st['failsafeSince']) . ' Uhr, spätestens bis ' . date('d.m.Y H:i', $fsEnd) . ' Uhr (oder bis die Steuerbox einen neuen Grenzwert schickt).';
