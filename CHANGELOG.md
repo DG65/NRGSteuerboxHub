@@ -3,6 +3,27 @@
 Alle nennenswerten Änderungen an diesem Modul werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
+## [0.3.0] - 2026-10-27
+
+### Added
+- Formular nach NRG-Stack-Konvention: „Wozu dieses Modul?“, „Neu bis Version“ (`NEWS_VERSIONS`),
+  Rückmeldungen, „Über dieses Modul“.
+- Neues Modul **SteuerboxHubEEBUS** („NRG-Stack SteuerboxHub EEBUS-Anbindung“, Präfix `SBHE`):
+  hängt am EEBUS-Gateway und reicht Anfragen (`SBHE_Forward`) und Ereignisse
+  (`SBH_ProcessEEBus`) durch. SteuerboxHub wählt die Anbindung im Abschnitt EEBUS
+  (automatisch, wenn es genau eine gibt) oder legt sie per Knopf an.
+
+### Removed
+- `parentRequirements`/`implemented` an SteuerboxHub: jede Instanz auf dem Kontakte-Weg zeigte
+  sonst den Balken „benötigt eine übergeordnete Instanz“ (live 27.10.2026).
+
+### Changed
+- EEBUS: Bezugsgröße der Einspeisegrenze ist die installierte PV-Leistung (kWp), dieselbe Größe,
+  mit der das EMS den Prozentwert in Watt zurückrechnet (live geprüft: 3000 W → 32,7 % → 3002 W).
+- GZF-Rechenhilfe meldet das Ergebnis und erinnert an „Übernehmen“; `SBH_CalculateGZF` ohne
+  Standardwerte (Stolperstein 8).
+- Nur noch ein Anzeigename im Anlege-Dialog („NRG-Stack SteuerboxHub“).
+
 ## [0.2.0] - 2026-10-27
 
 ### Added

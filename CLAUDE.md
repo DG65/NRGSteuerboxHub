@@ -54,10 +54,16 @@ ADAM-Module/Shellys, falls versehentlich eine reine Kontakt-Steuerbox verbaut wu
   verbaute Steuerbox (Ziel: SELEXA) liefert, muss dieses Modul beim Bau selbst herausfinden;
   das ist NICHT Teil des `SBH_GetState`-Vertrags, sondern interne Übersetzungsarbeit.
 
-**EEBUS-Weg, Stand 27.10.2026 (0.2.0):** SteuerboxHub ist Kind-Instanz des NRG-Stack
-EEBUS-Gateways (Präfix EEBGW, eigenes Repo; Schnittstelle `EEBUSGateway/.docs/kind-schnittstelle.md`,
-DataIDs `{26D4DA14-…}` Kind→Gateway, `{12D8B8A8-…}` Gateway→Kind). Den Gateway-Code hier nie
-ändern; Schnittstellenwünsche an Dietmar. Ohne Gateway: Status 104, kein Fehler.
+**EEBUS-Weg, Stand 27.10.2026 (0.3.0):** Kind-Instanz des NRG-Stack EEBUS-Gateways (Präfix
+EEBGW, eigenes Repo; Schnittstelle `EEBUSGateway/.docs/kind-schnittstelle.md`, DataIDs
+`{26D4DA14-…}` Kind→Gateway, `{12D8B8A8-…}` Gateway→Kind) ist die **Brücke `SteuerboxHubEEBUS`**
+(Präfix `SBHE`, nur Durchreiche: `SBHE_Forward` setzt DataID/Sender, `ReceiveData` ruft
+`SBH_ProcessEEBus(sbh, bridgeID, json)` bei allen SteuerboxHub-Instanzen). **Nie wieder
+`parentRequirements` an SteuerboxHub selbst:** sonst zeigt jede Kontakte-Instanz „benötigt eine
+übergeordnete Instanz“ (live 27.10.2026, wie MeterHub/InverterHub 19.09.2026). Zustandsmaschine
+und Formular bleiben in SteuerboxHub; Brücke per Property `EEBusBridgeID` (0 = automatisch bei
+genau einer) oder Knopf `SBH_CreateEEBusBridge`. Den Gateway-Code hier nie ändern;
+Schnittstellenwünsche an Dietmar. Ohne Brücke/Gateway: Status 104, kein Fehler.
 - Anmeldung: Entität `CEM`, LPC+LPP als `ControllableSystem`, Szenarien 1–4; Features LoadControl
   (limitId 0 = Bezug, 1 = Einspeisung, Wert ≤ 0), DeviceConfiguration (keyId 0/1/2 =
   failsafeConsumption/-DurationMinimum/-Production), ElectricalConnection (Nennleistungen).

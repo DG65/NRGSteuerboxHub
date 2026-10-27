@@ -69,10 +69,33 @@ function IPS_GetConfiguration(int $id): string { return json_encode($GLOBALS['IN
 function IPS_SetConfiguration(int $id, string $c): bool { $GLOBALS['INST'][$id]->config = array_merge($GLOBALS['INST'][$id]->config, json_decode($c, true)); return true; }
 function IPS_SetProperty(int $id, string $n, $v): bool { $GLOBALS['INST'][$id]->config[$n] = $v; return true; }
 function IPS_ApplyChanges(int $id): bool { $i = $GLOBALS['INST'][$id]; if (method_exists($i, 'anwenden')) { $i->anwenden(); } return true; }
-function IPS_CreateInstance(string $guid): int { $id = 20000 + count($GLOBALS['INST']); new FakeSocket($id); return $id; }
+function IPS_CreateInstance(string $guid): int
+{
+    $id = 20000 + count($GLOBALS['INST']);
+    if ($guid === '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}') {
+        (new TestBridge($id))->Create();
+    } else {
+        new FakeSocket($id);
+    }
+    return $id;
+}
 function IPS_ConnectInstance(int $id, int $parent): bool { $GLOBALS['INST'][$id]->parentId = $parent; return true; }
 function IPS_DeleteInstance(int $id): bool { unset($GLOBALS['INST'][$id]); return true; }
 function IPS_SetName(int $id, string $n): bool { $GLOBALS['INST'][$id]->name = $n; return true; }
+function IPS_GetParent(int $id): int { return 0; }
+function IPS_SetParent(int $id, int $p): bool { return true; }
+function IPS_GetInstanceListByModuleID(string $guid): array
+{
+    $ids = [];
+    foreach ($GLOBALS['INST'] as $id => $i) {
+        if (($i->modul ?? '') === $guid) { $ids[] = $id; }
+    }
+    return $ids;
+}
+// Von Symcon erzeugte Präfix-Funktionen der beiden Modultypen.
+function SBH_ProcessEEBus(int $id, int $bridge, string $json) { return $GLOBALS['INST'][$id]->ProcessEEBus($bridge, $json); }
+function SBH_CheckEEBus(int $id) { return $GLOBALS['INST'][$id]->CheckEEBus(); }
+function SBHE_Forward(int $id, string $json): string { return $GLOBALS['INST'][$id]->Forward($json); }
 function IPS_GetLibrary(string $guid): array
 {
     $dir = $guid === '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}' ? dirname(__DIR__) : $GLOBALS['GW_DIR'];
@@ -222,6 +245,7 @@ class FakeGateway
 }
 
 require dirname(__DIR__) . '/SteuerboxHub/module.php';
+require dirname(__DIR__) . '/SteuerboxHubEEBUS/module.php';
 
 class TestSBH extends SteuerboxHub
 {
@@ -230,10 +254,26 @@ class TestSBH extends SteuerboxHub
     protected function now(): int { return $GLOBALS['NOW']; }
 }
 
-function sbh(int $id, int $parent, array $props = []): TestSBH
+class TestBridge extends SteuerboxHubEEBUS
 {
+    public $name = 'EEBUS-Anbindung (Test)';
+    public $modul = '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}';
+}
+
+/** ID der Brücke zu einer SteuerboxHub-Instanz im Prüfstand. */
+function B(int $sbhId): int { return $sbhId + 100000; }
+
+/** SteuerboxHub ohne Elternteil; mit Gateway hängt davor eine Brücke (ID = B($id)) am Gateway. */
+function sbh(int $id, int $gateway, array $props = []): TestSBH
+{
+    if ($gateway > 0) {
+        $b = new TestBridge(B($id));
+        $b->parentId = $gateway;
+        $b->Create();
+        $b->ApplyChanges();
+        $props = ['EEBusBridgeID' => B($id)] + $props;
+    }
     $s = new TestSBH($id);
-    $s->parentId = $parent;
     $s->Create();
     $s->props = array_merge($s->props, $props);
     $s->ApplyChanges();
@@ -259,13 +299,13 @@ pruefe($st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feed
 $solo->CheckEEBus();
 pruefe($solo->status === 104, 'Timer ohne Gateway: läuft ohne Fehler durch');
 $f = json_encode(json_decode($solo->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
-pruefe(strpos($f, 'Keine Verbindung zu einem NRG-Stack EEBUS-Gateway') !== false && strpos($f, 'wird beim Öffnen berechnet') === false, 'Formular ohne Gateway: ℹ️-Zeile statt Platzhalter');
+pruefe(strpos($f, 'Noch keine EEBUS-Anbindung') !== false && strpos($f, 'EEBUS-Anbindung anlegen') !== false && strpos($f, 'wird beim Öffnen berechnet') === false, 'Formular ohne Gateway: ℹ️-Zeile statt Platzhalter');
 
 echo " Anmeldung\n";
 $gw = new FakeGateway(31000);
 $sb = sbh(31001, 31000, ['Transport' => 1, 'EEBusConsumptionNominalKw' => 22.0, 'EEBusProductionNominalKw' => 10.0, 'LoadPMin' => 5.88]);
 $reg = $gw->anfragen[0] ?? [];
-pruefe(($reg['Cmd'] ?? '') === 'Register' && $reg['DataID'] === TO_GATEWAY && $reg['Sender'] === 31001, 'Register mit DataID und Sender');
+pruefe(($reg['Cmd'] ?? '') === 'Register' && $reg['DataID'] === TO_GATEWAY && $reg['Sender'] === B(31001), 'Register mit DataID und Sender = Brücke');
 $ucs = $reg['Entity']['useCases'] ?? [];
 pruefe(($reg['Entity']['type'] ?? '') === 'CEM' && count($ucs) === 2
     && array_column($ucs, 'name') === ['limitationOfPowerConsumption', 'limitationOfPowerProduction']
@@ -292,28 +332,28 @@ pruefe(count(array_filter(array_slice($gw->anfragen, $vorher), function ($a) { r
 
 echo " Grenzen\n";
 $t0 = $GLOBALS['NOW'];
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => 42, 'scale' => 2]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => 42, 'scale' => 2]]]));
 $st = $sb->GetState();
 pruefe($st['loadDimmActive'] === true && $st['loadPMin'] === 4.2 && $st['loadSince'] === $t0, 'LPC 4200 W (number 42, scale 2): loadDimmActive, loadPMin 4,2 kW, loadSince');
 pruefe($st['feedInDimmActive'] === false && $st['feedInLimitPercent'] === 100.0, 'Einspeisung davon unberührt');
-$gw->ereignis(lpcWrite(31001, [['limitId' => 1, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => -3000, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 1, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => -3000, 'scale' => 0]]]));
 $st = $sb->GetState();
 pruefe($st['feedInDimmActive'] === true && $st['feedInLimitPercent'] === 30.0 && $st['loadPMin'] === 4.2, 'LPP −3000 W bei 10 kW Nennleistung: 30 %, Bezugsgrenze bleibt');
 $gw->ereignis(lpcWrite(99999, [['limitId' => 0, 'isLimitActive' => false, 'value' => ['number' => 0, 'scale' => 0]]]));
 pruefe($sb->GetState()['loadDimmActive'] === true, 'Ereignis für eine andere Instanz (Target) wird ignoriert');
 vor(60);
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => 6000, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => 6000, 'scale' => 0]]]));
 $st = $sb->GetState();
 pruefe($st['loadPMin'] === 6.0 && $st['loadSince'] === $t0, 'Neuer Wert bei aktiver Grenze: loadPMin 6 kW, loadSince bleibt');
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => false, 'value' => ['number' => 6000, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => false, 'value' => ['number' => 6000, 'scale' => 0]]]));
 $st = $sb->GetState();
 pruefe($st['loadDimmActive'] === false && $st['loadPMin'] === 0.0 && $st['loadSince'] === 0, 'Grenze aufgehoben: keine Begrenzung, loadSince 0');
-$gw->ereignis(lpcWrite(31001, [['limitId' => 1, 'isLimitChangeable' => true, 'isLimitActive' => false, 'value' => ['number' => -3000, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 1, 'isLimitChangeable' => true, 'isLimitActive' => false, 'value' => ['number' => -3000, 'scale' => 0]]]));
 pruefe($sb->GetState()['feedInDimmActive'] === false, 'Einspeisegrenze aufgehoben');
 
 echo " Befristungsende\n";
 $t1 = $GLOBALS['NOW'];
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => 100, 'scale' => 0], 'timePeriod' => ['endTime' => 'PT1H2M3S']]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitChangeable' => true, 'isLimitActive' => true, 'value' => ['number' => 100, 'scale' => 0], 'timePeriod' => ['endTime' => 'PT1H2M3S']]]));
 pruefe($sb->GetState()['loadPMin'] === 0.1, 'Befristete Grenze 100 W für PT1H2M3S aktiv');
 vor(3722);
 $sb->CheckEEBus();
@@ -324,7 +364,7 @@ $sb->CheckEEBus();
 $lim = array_column($gw->letzte('loadControlLimitListData')['loadControlLimitData'] ?? [], null, 'limitId');
 pruefe(($lim[0]['isLimitActive'] ?? true) === false && !isset($lim[0]['timePeriod']), 'Timer meldet der Steuerbox die abgelaufene Grenze als inaktiv zurück');
 pruefe(count(array_filter($sb->log, function ($l) { return strpos($l, 'Befristung der Bezugsgrenze abgelaufen') !== false; })) === 1, 'Befristungsende dauerhaft protokolliert (einmal)');
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 2000, 'scale' => 0], 'timePeriod' => ['endTime' => gmdate('Y-m-d\TH:i:s\Z', $GLOBALS['NOW'] + 600)]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 2000, 'scale' => 0], 'timePeriod' => ['endTime' => gmdate('Y-m-d\TH:i:s\Z', $GLOBALS['NOW'] + 600)]]]));
 vor(599);
 pruefe($sb->GetState()['loadDimmActive'] === true, 'Absolute endTime: vor Ablauf aktiv');
 vor(1);
@@ -332,7 +372,7 @@ pruefe($sb->GetState()['loadDimmActive'] === false, 'Absolute endTime: danach in
 $sb->CheckEEBus();
 
 echo " Ausfallwerte der Steuerbox\n";
-$gw->ereignis(['Event' => 'write', 'owner' => 31001, 'entity' => 1, 'feature' => 'DeviceConfiguration', 'function' => 'deviceConfigurationKeyValueListData',
+$gw->ereignis(['Event' => 'write', 'owner' => B(31001), 'entity' => 1, 'feature' => 'DeviceConfiguration', 'function' => 'deviceConfigurationKeyValueListData',
     'changes' => [], 'bound' => true, 'data' => ['deviceConfigurationKeyValueData' => [
         ['keyId' => 0, 'value' => ['scaledNumber' => ['number' => 3500, 'scale' => 0]], 'isValueChangeable' => true],
         ['keyId' => 1, 'value' => ['duration' => 'PT1H'], 'isValueChangeable' => true],
@@ -342,7 +382,7 @@ pruefe(($kv[1]['value']['duration'] ?? '') === 'PT2H', 'Mindestdauer PT1H (unter
 pruefe(($kv[0]['value']['scaledNumber']['number'] ?? 0) === 3500 && ($kv[2]['value']['scaledNumber']['number'] ?? 0) === 5000, 'Geschriebene Ausfallgrenzen 3500 W / 5000 W übernommen');
 
 echo " Heartbeat-Ausfall\n";
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 8000, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 8000, 'scale' => 0]]]));
 $tf = $GLOBALS['NOW'];
 $gw->state['heartbeatLost'] = true;
 $gw->ereignis(['Event' => 'heartbeat', 'state' => 'lost', 'since' => $tf - 121]);
@@ -356,7 +396,7 @@ $gw->state['heartbeatLost'] = false;
 $gw->ereignis(['Event' => 'heartbeat', 'state' => 'ok']);
 $sb->CheckEEBus();
 pruefe($sb->GetState()['loadPMin'] === 3.5, 'Heartbeat wieder da, aber kein neuer Grenzwert: Ausfallgrenze bleibt');
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 7000, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 7000, 'scale' => 0]]]));
 $st = $sb->GetState();
 pruefe($st['loadPMin'] === 7.0 && $st['feedInDimmActive'] === false && $sb->status === 102, 'Neuer Grenzwert: Ausfall beendet, 7 kW, Status 102');
 
@@ -386,12 +426,11 @@ $gw->ereignis(['Event' => 'connection', 'state' => 'connected', 'shipId' => 'Dem
 pruefe($sb->status === 102 && $sb->GetState()['loadDimmActive'] === false, 'Steuerbox zurück: gesteuert, ohne alte Grenzen');
 
 echo " Neustart\n";
-$gw->ereignis(lpcWrite(31001, [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 4200, 'scale' => 0]]]));
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 4200, 'scale' => 0]]]));
 $attrs = $sb->attrs;
 $gw->state['connected'] = false;
 vor(60);
 $neu = new TestSBH(31001);
-$neu->parentId = 31000;
 $neu->Create();
 $neu->props = $sb->props;
 $neu->attrs = $attrs;
@@ -402,12 +441,13 @@ $neu->CheckEEBus();
 pruefe($neu->status === 204 && $neu->GetState()['loadPMin'] === 3.5, 'Keine Steuerbox binnen 120 s: Ausfallgrenze');
 $sb = $neu;
 
+
 echo " Formular\n";
 $gw->state['connected'] = true;
 $gw->ereignis(['Event' => 'connection', 'state' => 'connected', 'shipId' => 'Demo-ControlBox-123']);
 $form = json_decode($sb->GetConfigurationForm(), true);
 $f = json_encode($form, JSON_UNESCAPED_UNICODE);
-pruefe(strpos($f, '✅ Verbunden über Gateway #31000') !== false && strpos($f, 'Demo-ControlBox-123') !== false, 'Formular: ✅-Zeile mit Gateway und Steuerbox');
+pruefe(strpos($f, '✅ Verbunden über Anbindung #' . B(31001) . ' und Gateway #31000') !== false && strpos($f, 'Demo-ControlBox-123') !== false, 'Formular: ✅-Zeile mit Gateway und Steuerbox');
 pruefe(strpos($f, 'Ausfallzustand seit') !== false && strpos($f, 'Bezug 3,5 kW (von der Steuerbox)') !== false, 'Formular: Ausfallzustand und Herkunft der Ausfallwerte');
 pruefe(strpos($f, 'wird beim Öffnen berechnet') === false, 'Formular: keine Platzhalter mehr');
 $vis = [];
@@ -423,11 +463,29 @@ pruefe(($sb->form['ContactsPanel']['visible'] ?? null) === true && ($sb->form['E
 $codes = array_column(json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/form.json'), true)['status'], 'code');
 pruefe(!array_diff([102, 104, 202, 203, 204, 205, 210], $codes), 'Jeder Statuscode hat einen Eintrag in form.json');
 
+echo " Brücke (EEBUS-Anbindung)\n";
+pruefe($GLOBALS['INST'][B(31001)]->status === 102, 'Brücke am Gateway: Status 102');
+$lose = new TestBridge(36000);
+$lose->Create();
+$lose->ApplyChanges();
+pruefe($lose->status === 104, 'Brücke ohne Gateway: Status 104');
+$vorher = $sb->GetState()['loadPMin'];
+$fremd = sbh(36001, 0, ['Transport' => 1, 'EEBusBridgeID' => 36000]);
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 9999, 'scale' => 0]]]));
+pruefe($fremd->GetState()['loadDimmActive'] === false && $fremd->status === 104, 'Ereignis über fremde Brücke erreicht die andere SteuerboxHub-Instanz nicht');
+pruefe($sb->GetState()['loadPMin'] === 9.999, 'Eigene Instanz bekommt es (9,999 kW)');
+$gws = count(IPS_GetInstanceListByModuleID(GW_ID));
+$neuB = $fremd->CreateEEBusBridge();
+$nb = $fremd->form['EEBusBridgeID']['value'] ?? 0;
+pruefe($nb > 0 && ($GLOBALS['INST'][$nb]->modul ?? '') === '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}' && strpos($neuB, 'angelegt') !== false && strpos($neuB, 'Übernehmen') !== false, '„EEBUS-Anbindung anlegen“: Brücke angelegt, in die Maske eingetragen, Hinweis auf „Übernehmen“');
+pruefe($gws > 1 ? ($GLOBALS['INST'][$nb]->parentId === 0 && strpos($neuB, 'Mehrere EEBUS-Gateways') !== false) : true, 'Bei mehreren Gateways nicht raten, sondern Hinweis');
+
+
 echo " Einspeisung ohne Nennleistung\n";
 $gw2 = new FakeGateway(32000);
 $gw2->state['connected'] = true;
 $ohne = sbh(32001, 32000, ['Transport' => 1]);
-$gw2->ereignis(lpcWrite(32001, [['limitId' => 1, 'isLimitActive' => true, 'value' => ['number' => -4000, 'scale' => 0]]]));
+$gw2->ereignis(lpcWrite(B(32001), [['limitId' => 1, 'isLimitActive' => true, 'value' => ['number' => -4000, 'scale' => 0]]]));
 pruefe($ohne->GetState()['feedInLimitPercent'] === 0.0, 'Ohne Nennleistung: 0 % (sicher für das Netz)');
 $f = json_encode(json_decode($ohne->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
 pruefe(strpos($f, '⛔ Pflichtangabe') !== false && strpos($f, '"color":16711680') !== false, 'Formular: Nennleistung als ⛔ Pflichtangabe in Rot');
@@ -449,6 +507,45 @@ $ohne->ApplyChanges();
 $st = $ohne->GetState();
 pruefe($st['source'] === 'contacts' && $st['feedInDimmActive'] === false && $st['feedInLimitPercent'] === 100.0, 'Zurück auf Kontakte: keine EEBUS-Grenze bleibt hängen');
 
+
+echo " Formular-Konvention\n";
+$fk = sbh(35001, 0, ['Transport' => 0]);
+$form = json_decode($fk->GetConfigurationForm(), true);
+$caps = array_map(function ($e) { return $e['caption'] ?? ($e['name'] ?? $e['type']); }, $form['elements']);
+$idx = function (string $needle) use ($caps) { foreach ($caps as $i => $c) { if (strpos((string) $c, $needle) !== false) { return $i; } } return -1; };
+pruefe($idx('Wozu dieses Modul') === 0 && $idx('Neu bis Version') === 1 && $idx('Dokumentation') === 2, 'Reihenfolge: Wozu → Neu bis Version → Dokumentation & Hilfe');
+pruefe($idx('Rückmeldungen') === count($caps) - 2 && $idx('Über dieses Modul') === count($caps) - 1, 'Rückmeldungen und „Über dieses Modul“ am Ende');
+pruefe(strpos($caps[1], '0.3.0') !== false, 'News-Panel nennt die höchste neue Version (0.3.0)');
+$lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
+$doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
+pruefe(strpos($doc, 'SteuerboxHub Version 0.3.0 (Build 3)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+$fk->AckPurposeIntro();
+$fk->AckNews();
+$fk->AckForumHint();
+$caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
+pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
+pruefe($fk->attrs['SeenNews'] === '0.3.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version und blendet sofort aus');
+$fk->attrs['SeenNews'] = '0.2.0';
+$caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
+$news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);
+pruefe(strpos($caps3[0], 'Neu bis Version 0.3.0') !== false && strpos($news, 'Version 0.2.0:') === false, 'Wer 0.2.0 kannte, sieht nur die Neuerungen von 0.3.0');
+
+$txt = $fk->CalculateGZF(4, 0.0);
+pruefe(($fk->form['LoadPMin']['value'] ?? 0) === 13.02 && strpos($txt, '13,02 kW') !== false && strpos($txt, 'Übernehmen') !== false, 'GZF-Rechenhilfe: n = 4 → 13,02 kW, Rückmeldung nennt „Übernehmen“');
+$mj = json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/module.json'), true);
+pruefe($mj['aliases'] === ['NRG-Stack SteuerboxHub'], 'Genau ein Alias (ein Eintrag im Anlege-Dialog)');
+// SDK-Lebenszyklus-Funktionen haben eine von Symcon vorgegebene Signatur und werden nicht als SBH_-Funktion erzeugt.
+$sdk = ['Create', 'ApplyChanges', 'Destroy', 'MessageSink', 'ReceiveData', 'GetConfigurationForm', 'RequestAction'];
+$verstoesse = [];
+foreach ((new ReflectionClass(SteuerboxHub::class))->getMethods(ReflectionMethod::IS_PUBLIC) as $m) {
+    if ($m->getDeclaringClass()->getName() !== SteuerboxHub::class || in_array($m->getName(), $sdk, true)) { continue; }
+    foreach ($m->getParameters() as $p) {
+        if ($p->isOptional() || !$p->hasType()) { $verstoesse[] = $m->getName() . '($' . $p->getName() . ')'; }
+    }
+}
+pruefe($verstoesse === [], 'Öffentliche SBH_-Funktionen: keine Standardwerte, alle Parameter typisiert (Stolperstein 8/20)' . ($verstoesse ? ': ' . implode(', ', $verstoesse) : ''));
+
 echo " Kontakte-Weg unverändert\n";
 $GLOBALS['VARS'][40010] = true;
 $k = sbh(34001, 0, ['Transport' => 0, 'LoadContactVarID' => 40010, 'LoadPMin' => 5.04]);
@@ -456,7 +553,9 @@ $st = $k->GetState();
 pruefe($st['source'] === 'contacts' && $st['loadDimmActive'] === true && $st['loadPMin'] === 5.04 && $k->status === 102, 'Kontakt aktiv: contacts, loadPMin aus der Instanz');
 pruefe(strpos((string) file_get_contents(dirname(__DIR__) . '/SteuerboxHub/module.php'), 'IPS_LogMessage') === false, 'Logging nur über $this->LogMessage (Store-Checkliste 15)');
 $mj = json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/module.json'), true);
-pruefe($mj['parentRequirements'] === [TO_GATEWAY] && $mj['implemented'] === [TO_CHILD], 'module.json: Kind-Schnittstelle des EEBUS-Gateways');
+pruefe($mj['parentRequirements'] === [] && $mj['implemented'] === [], 'SteuerboxHub ohne parentRequirements (kein Balken „benötigt eine übergeordnete Instanz“)');
+$bj = json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHubEEBUS/module.json'), true);
+pruefe($bj['parentRequirements'] === [TO_GATEWAY] && $bj['implemented'] === [TO_CHILD] && $bj['prefix'] === 'SBHE' && count($bj['aliases']) === 1, 'Brücke trägt die Kind-Schnittstelle des EEBUS-Gateways, ein Alias');
 
 // ---------------------------------------------------------------------------
 $gwArg = array_search('--gateway', $argv, true);
@@ -476,7 +575,7 @@ if ($gwArg !== false) {
     $kind = sbh(50003, 50002, ['Transport' => 1, 'EEBusProductionNominalKw' => 10.0]);
 
     $anm = json_decode($egw->attrs['Anmeldungen'], true);
-    pruefe(isset($anm['50003']) && count($anm['50003']['useCases']) === 2, 'Gateway hat die Anmeldung gespeichert');
+    pruefe(isset($anm[(string) B(50003)]) && count($anm[(string) B(50003)]['useCases']) === 2, 'Gateway hat die Anmeldung der Brücke gespeichert');
     pruefe(json_decode($kind->attrs['EEBusState'], true)['entity'] === 1, 'Gateway vergibt Entität 1');
     $nichtUebernommen = array_filter($kind->log, function ($l) { return strpos($l, 'nicht übernommen') !== false; });
     pruefe($nichtUebernommen === [], 'Alle Feature-Daten vom Gateway angenommen' . ($nichtUebernommen ? ': ' . implode(' | ', $nichtUebernommen) : ''));
@@ -500,7 +599,7 @@ if ($gwArg !== false) {
     pruefe(count($geaendert) === 1 && $geaendert[0]['limitId'] === 0, 'Gateway meldet nur die geänderte Grenze');
     $verteilen = new ReflectionMethod(EEBUSGateway::class, 'ereignisVerteilen');
     $verteilen->invoke($egw, ['event' => 'connection', 'state' => 'connected', 'shipId' => 'Demo-ControlBox-123']);
-    $verteilen->invoke($egw, ['event' => 'write', 'owner' => 50003, 'entity' => 1, 'feature' => 'LoadControl', 'function' => 'loadControlLimitListData',
+    $verteilen->invoke($egw, ['event' => 'write', 'owner' => B(50003), 'entity' => 1, 'feature' => 'LoadControl', 'function' => 'loadControlLimitListData',
         'changes' => $geaendert, 'data' => $gesamt, 'bound' => true]);
     $st = $kind->GetState();
     pruefe($st['loadDimmActive'] === true && $st['loadPMin'] === 0.1 && $st['feedInDimmActive'] === false, 'Echtes Schreibereignis: LPC 100 W kommt als loadPMin 0,1 kW an');

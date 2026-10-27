@@ -4,18 +4,11 @@
   "type": 3,
   "vendor": "",
   "aliases": [
-    "SteuerboxHub",
-    "Netzbetreiber-Steuerung (§14a EnWG)",
-    "NRGSteuerboxHub",
     "NRG-Stack SteuerboxHub"
   ],
   "url": "https://github.com/DG65/NRGSteuerboxHub",
-  "parentRequirements": [
-    "{26D4DA14-6C0D-4686-AE00-D23234BAD90D}"
-  ],
+  "parentRequirements": [],
   "childRequirements": [],
-  "implemented": [
-    "{12D8B8A8-3EE7-491F-A68A-D632304165D4}"
-  ],
+  "implemented": [],
   "prefix": "SBH"
 }

@@ -1,7 +1,7 @@
 # SteuerboxHub
 
 ![Symcon](https://img.shields.io/badge/Symcon-PHPModul-blue)
-![Modul Version](https://img.shields.io/badge/Modul_Version-0.2.0-blue)
+![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.0-blue)
 ![Symcon Version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
 [![Check Style](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml)
@@ -16,9 +16,10 @@ Zwei Transportwege:
 - **Potentialfreie Kontakte** (Rundsteuerempfänger-Schema, FNN-Dreistufenschema W3/S1/S2) über
   bestehende Symcon-Variablen eines I/O-Moduls oder Digitalisierers. Der Zielwert Pmin wird in
   der Instanz eingestellt (mit Gleichzeitigkeitsfaktor-Rechenhilfe).
-- **EEBUS** (ab 0.2.0): SteuerboxHub hängt als Kind-Instanz am **NRG-Stack EEBUS-Gateway** und
-  meldet sich dort mit den Anwendungsfällen LPC und LPP (Begrenzung von Bezug und Einspeisung)
-  an. Die Steuerbox schreibt Grenzen in Watt, auf Wunsch befristet. Fehlt ihr Lebenszeichen
+- **EEBUS** (ab 0.2.0): SteuerboxHub meldet sich über die **EEBUS-Anbindung** (zweites Modul
+  dieser Bibliothek, Präfix `SBHE`) beim **NRG-Stack EEBUS-Gateway** mit den Anwendungsfällen
+  LPC und LPP (Begrenzung von Bezug und Einspeisung) an. Einrichtung: Gateway anlegen und
+  koppeln, dann in SteuerboxHub Transportweg EEBUS wählen und „EEBUS-Anbindung anlegen“. Die Steuerbox schreibt Grenzen in Watt, auf Wunsch befristet. Fehlt ihr Lebenszeichen
   länger als 120 s, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die
   Mindestdauer (2 bis 24 h) abgelaufen ist. Bisher geprüft gegen den Steuerbox-Simulator
   `controlbox` aus eebus-go (über das Gateway), noch nicht mit einer echten Steuerbox.

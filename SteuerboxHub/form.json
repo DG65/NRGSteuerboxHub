@@ -31,7 +31,7 @@
         },
         {
           "type": "Label",
-          "caption": "EEBUS-Weg: SteuerboxHub hängt als Kind-Instanz an einem NRG-Stack EEBUS-Gateway (eigenes Modul, hält Zertifikat, Kopplung und Verbindung zur Steuerbox). Die Steuerbox schreibt Grenzen in Watt für Bezug (LPC) und Einspeisung (LPP), auf Wunsch befristet. Fällt ihr Lebenszeichen länger als 120 s aus, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die Mindestdauer (2 bis 24 h) abgelaufen ist."
+          "caption": "EEBUS-Weg: Das NRG-Stack EEBUS-Gateway (eigenes Modul) hält Zertifikat, Kopplung und Verbindung zur Steuerbox. Daran hängt die „EEBUS-Anbindung“ aus diesem Modul, die SteuerboxHub mit dem Gateway verbindet (Knopf im Abschnitt EEBUS). Die Steuerbox schreibt Grenzen in Watt für Bezug (LPC) und Einspeisung (LPP), auf Wunsch befristet. Fällt ihr Lebenszeichen länger als 120 s aus, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die Mindestdauer (2 bis 24 h) abgelaufen ist."
         }
       ]
     },
@@ -84,7 +84,7 @@
             {
               "type": "Button",
               "caption": "Pmin berechnen und übernehmen",
-              "onClick": "SBH_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
+              "onClick": "echo SBH_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
             }
           ]
         },
@@ -209,6 +209,19 @@
           "type": "Label",
           "name": "EEBusFailsafeLine",
           "caption": "(wird beim Öffnen berechnet)"
+        },
+        {
+          "type": "SelectInstance",
+          "name": "EEBusBridgeID",
+          "caption": "EEBUS-Anbindung (leer = automatisch, wenn es genau eine gibt)",
+          "validModules": [
+            "{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}"
+          ]
+        },
+        {
+          "type": "Button",
+          "caption": "EEBUS-Anbindung anlegen",
+          "onClick": "echo SBH_CreateEEBusBridge($id);"
         },
         {
           "type": "Label",

@@ -20,8 +20,13 @@
 //                über SHIP/SPINE. Den Protokollstapel hält das NRG-Stack
 //                EEBUS-Gateway (Präfix EEBGW, eigenes Modul, reines PHP über
 //                Symcons Client Socket, geprüft gegen eebus-go controlbox am
-//                27.10.2026). SteuerboxHub hängt als Kind-Instanz daran
-//                (Kind-Schnittstelle 1.0), meldet sich als Entität mit LPC und
+//                27.10.2026). Am Gateway hängt die Brücke SteuerboxHubEEBUS
+//                (Präfix SBHE, gleiche Bibliothek), nicht SteuerboxHub selbst:
+//                Mit parentRequirements am Hauptmodul zeigte jede Instanz auf
+//                dem Kontakte-Weg den Balken „benötigt eine übergeordnete
+//                Instanz“ (live 27.10.2026). Über die Brücke (Kind-Schnittstelle
+//                1.0, SBHE_Forward / SBH_ProcessEEBus) meldet sich SteuerboxHub
+//                als Entität mit LPC und
 //                LPP in der Rolle "ControllableSystem" an, liefert die
 //                Feature-Daten und übersetzt Schreibbefehle und Heartbeat-
 //                Ausfall in SBH_GetState. Das Gateway kennt keine §14a-Logik,
@@ -36,8 +41,8 @@ class SteuerboxHub extends IPSModule
 {
     // Kind-Schnittstelle 1.0 des EEBUS-Gateways (EEBUSGateway/.docs/kind-schnittstelle.md).
     private const EEBGW_MODULE_ID       = '{32809AEC-3A90-455F-8FE4-188DF37D594F}';
-    private const EEBGW_DATA_TO_GATEWAY = '{26D4DA14-6C0D-4686-AE00-D23234BAD90D}';
     private const EEBGW_DATA_TO_CHILD   = '{12D8B8A8-3EE7-491F-A68A-D632304165D4}';
+    private const BRIDGE_MODULE_ID      = '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}';
 
     // LPC/LPP: Heartbeat der Steuerbox länger als 120 s weg = Ausfall (Szenario 3/4);
     // Mindestdauer des Ausfallzustands 2 h bis 24 h, Vorgabe 2 h (Szenario 2).
@@ -87,7 +92,9 @@ class SteuerboxHub extends IPSModule
         // OpenEMS Limiter14aImpl: >60 s ohne Signal gilt als kritisch.
         $this->RegisterPropertyInteger('WatchdogTimeout', 60);
 
-        // --- EEBus-Weg (Kind-Instanz des EEBUS-Gateways) ---
+        // --- EEBus-Weg (über die Brücke SteuerboxHubEEBUS am EEBUS-Gateway) ---
+        // 0 = automatisch, wenn genau eine Brücke existiert.
+        $this->RegisterPropertyInteger('EEBusBridgeID', 0);
         // Ohne Funktion, siehe Klassenkommentar.
         $this->RegisterPropertyString('EEBusBridgeURL', '');
         $this->RegisterPropertyString('EEBusSKI', '');
@@ -112,6 +119,11 @@ class SteuerboxHub extends IPSModule
         $this->RegisterAttributeFloat('FeedInPercent', 100.0); // FeedInMode=1 (FNN-Dreistufen) und EEBus
         $this->RegisterAttributeString('EEBusState', '');
 
+        // Formular-Hinweise (ausblendbar)
+        $this->RegisterAttributeBoolean('PurposeIntroGone', false);
+        $this->RegisterAttributeString('SeenNews', '');
+        $this->RegisterAttributeBoolean('ForumHintGone', false);
+
         $this->RegisterTimer('SBH_Watchdog', 0, 'SBH_CheckWatchdog($_IPS[\'TARGET\']);');
         $this->RegisterTimer('SBH_EEBus', 0, 'SBH_CheckEEBus($_IPS[\'TARGET\']);');
     }
@@ -129,14 +141,10 @@ class SteuerboxHub extends IPSModule
         $this->SetTimerInterval('SBH_Watchdog', 0);
         $this->SetTimerInterval('SBH_EEBus', 0);
 
-        // Anmeldung beim Gateway auch nach Umhängen der Instanz (Kind-Schnittstelle).
-        $this->RegisterMessage($this->InstanceID, FM_CONNECT);
-        $this->RegisterMessage($this->InstanceID, FM_DISCONNECT);
-
         if ($this->ReadPropertyInteger('Transport') === 0) {
             $this->applyContactsTransport();
-            // Mit Gateway verbunden, aber Kontakte gewählt: dort keine LPC/LPP-Entität anbieten.
-            if ($this->eebusParentID() > 0 && IPS_GetKernelRunlevel() === KR_READY) {
+            // Brücke vorhanden, aber Kontakte gewählt: beim Gateway keine LPC/LPP-Entität anbieten.
+            if ($this->eebusGatewayID() > 0 && IPS_GetKernelRunlevel() === KR_READY) {
                 $this->eebusCall(['Cmd' => 'Unregister']);
             }
         } else {
@@ -218,12 +226,31 @@ class SteuerboxHub extends IPSModule
         $this->eebusTick(false);
     }
 
-    // Formular-Reihenfolge (Verbund-Konvention, EMS/Dietmar 24.07.2026):
-    // 1. „Was ist neu" (aufgeklappt, versionsscharf dismissible) — hier noch
-    //    kein Eintrag nötig, erste veröffentlichte Fassung.
-    // 2. „Dokumentation & Hilfe" (eingeklappt, MIT Versionsnummer) — existiert
-    //    bereits in form.json, Versionszeile wird dort nur eingefügt.
+    // Formular-Reihenfolge (SUITE.md „Einheitliche Formular-Optik“):
+    // 0. „Wozu dieses Modul?“ (aufgeklappt, einmalig ausblendbar)
+    // 1. „Neu bis Version“ (aufgeklappt, versionsscharf ausblendbar, NEWS_VERSIONS)
+    // 2. „Dokumentation & Hilfe“ (eingeklappt, mit Versionsnummer, aus form.json)
     // 3. Fachpanels (form.json)
+    // 4. Rückmeldungen (einmalig ausblendbar)
+    // 5. „Über dieses Modul“ (eingeklappt, nicht ausblendbar)
+    private const NEWS_VERSIONS = [
+        '0.2.0' => [
+            '• Neuer Transportweg EEBUS: SteuerboxHub hängt als Kind-Instanz am NRG-Stack EEBUS-Gateway und nimmt Grenzen der Steuerbox für Bezug (LPC) und Einspeisung (LPP) entgegen, auch befristet.',
+            '• Fällt die Steuerbox länger als 120 s aus, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die Mindestdauer abgelaufen ist.',
+            '• Pmin nach §14a mit Rechenhilfe steht jetzt in einem eigenen Abschnitt und gilt für beide Wege.',
+        ],
+        '0.3.0' => [
+            '• 👋 Neue Zweck-Einführung ganz oben im Formular, dazu Rückmeldungs- und Lizenzhinweis.',
+            '• EEBUS: Die Einspeisegrenze wird auf die installierte PV-Leistung (kWp) bezogen, dieselbe Größe, mit der das EMS rechnet.',
+            '• EEBUS: Ans Gateway hängt jetzt die eigene Instanz „NRG-Stack SteuerboxHub EEBUS-Anbindung“, nicht mehr SteuerboxHub selbst. Damit verschwindet auf dem Kontakte-Weg der Hinweis „benötigt eine übergeordnete Instanz“. Anlegen per Knopf im Abschnitt EEBUS.',
+        ],
+    ];
+    private const LIBRARY_GUID = '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}';
+    private const REPO_URL     = 'https://github.com/DG65/NRGSteuerboxHub';
+    private const ISSUES_URL   = 'https://github.com/DG65/NRGSteuerboxHub/issues';
+    private const LICENSE_URL  = 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE';
+    private const PAYPAL_URL   = 'https://paypal.me/DietmarGureth';
+
     public function GetConfigurationForm()
     {
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
@@ -231,7 +258,121 @@ class SteuerboxHub extends IPSModule
         $this->applyFeedInVisibility($form['elements'], $this->ReadPropertyInteger('FeedInMode'));
         $this->applyTransportVisibility($form['elements'], $this->ReadPropertyInteger('Transport'));
         $this->injectEEBusStatus($form['elements']);
+        $form['elements'] = array_values(array_filter(array_merge(
+            [$this->formPurposeIntro(), $this->formNewsBanner()],
+            $form['elements'],
+            [$this->formForumHint(), $this->formLicenseHint()]
+        )));
         return json_encode($form);
+    }
+
+    public function AckPurposeIntro()
+    {
+        $this->WriteAttributeBoolean('PurposeIntroGone', true);
+        $this->UpdateFormField('PurposeIntroPanel', 'visible', false);
+    }
+
+    public function AckNews()
+    {
+        // Gespeichert wird die installierte Version, nicht der zuletzt gezeigte Eintrag (SUITE.md Formular-Optik Punkt 1).
+        $this->WriteAttributeString('SeenNews', $this->installedVersion());
+        $this->UpdateFormField('NewsPanel', 'visible', false);
+    }
+
+    public function AckForumHint()
+    {
+        $this->WriteAttributeBoolean('ForumHintGone', true);
+        $this->UpdateFormField('ForumHintPanel', 'visible', false);
+    }
+
+    private function installedVersion(): string
+    {
+        $lib = @IPS_GetLibrary(self::LIBRARY_GUID);
+        if (is_array($lib) && !empty($lib['Version'])) {
+            return (string) preg_replace('/-.*$/', '', (string) $lib['Version']);
+        }
+        $keys = array_keys(self::NEWS_VERSIONS);
+        usort($keys, 'version_compare');
+        return (string) end($keys);
+    }
+
+    private function formPurposeIntro(): ?array
+    {
+        if ($this->ReadAttributeBoolean('PurposeIntroGone')) {
+            return null;
+        }
+        return [
+            'type' => 'ExpansionPanel', 'name' => 'PurposeIntroPanel', 'expanded' => true,
+            'caption' => '👋  Wozu dieses Modul?',
+            'items' => [
+                ['type' => 'Label', 'caption' => 'SteuerboxHub nimmt die Leistungsbegrenzung des Netzbetreibers nach §14a EnWG entgegen: über die Kontakte einer Steuerbox oder eines Rundsteuerempfängers oder über EEBUS. Es meldet, ob und wie stark Bezug und Einspeisung gerade begrenzt sind, mit Zeitpunkt.'],
+                ['type' => 'Label', 'caption' => 'Es regelt selbst nichts. Umsetzen muss die Grenze ein Energiemanagement, z. B. das NRG-Stack EMS (Wallboxen, Wechselrichter), oder ein eigenes Skript über SBH_GetState. Für EEBUS werden zusätzlich das NRG-Stack EEBUS-Gateway und die EEBUS-Anbindung aus diesem Modul gebraucht.'],
+                ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckPurposeIntro($id);'],
+            ],
+        ];
+    }
+
+    private function formNewsBanner(): ?array
+    {
+        $seen    = (string) $this->ReadAttributeString('SeenNews');
+        $pending = [];
+        foreach (self::NEWS_VERSIONS as $version => $lines) {
+            if (version_compare((string) $version, $seen === '' ? '0' : $seen, '>')) {
+                $pending[(string) $version] = $lines;
+            }
+        }
+        if ($pending === []) {
+            return null;
+        }
+        uksort($pending, 'version_compare');
+        $items = [];
+        foreach ($pending as $version => $lines) {
+            $items[] = ['type' => 'Label', 'caption' => 'Version ' . $version . ':'];
+            foreach ($lines as $line) {
+                $items[] = ['type' => 'Label', 'caption' => $line];
+            }
+        }
+        $items[] = ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckNews($id);'];
+        $keys = array_keys($pending);
+        return [
+            'type' => 'ExpansionPanel', 'name' => 'NewsPanel', 'expanded' => true,
+            'caption' => '🆕  Neu bis Version ' . end($keys),
+            'items' => $items,
+        ];
+    }
+
+    private function formForumHint(): ?array
+    {
+        if ($this->ReadAttributeBoolean('ForumHintGone')) {
+            return null;
+        }
+        // Forum-Thread folgt mit der Veröffentlichung; bis dahin GitHub.
+        return [
+            'type' => 'ExpansionPanel', 'name' => 'ForumHintPanel', 'expanded' => true,
+            'caption' => '💬  Rückmeldungen',
+            'items' => [
+                ['type' => 'Label', 'caption' => '🧪 Welche Steuerbox bzw. welcher Rundsteuerempfänger ist bei dir verbaut, und kommt das Signal richtig an? Rückmeldungen mit Hersteller, Modell und Netzbetreiber helfen sehr, gerade beim EEBUS-Weg.'],
+                ['type' => 'Button', 'caption' => 'Fehler oder Erfahrung auf GitHub melden', 'onClick' => "echo '" . self::ISSUES_URL . "';", 'link' => true],
+                ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckForumHint($id);'],
+            ],
+        ];
+    }
+
+    /** Wortlaut verbundweit identisch (SUITE.md Formular-Optik Punkt 5, Variante A). */
+    private function formLicenseHint(): array
+    {
+        return [
+            'type' => 'ExpansionPanel', 'expanded' => false,
+            'caption' => '🧡  Über dieses Modul',
+            'items' => [
+                ['type' => 'Label', 'caption' => 'Entstanden aus echter Begeisterung für die eigene Anlage — und ein paar durchgetippten Abenden. Trotzdem: Software-Hobby hin oder her, das hier ist geistiges Eigentum und echte Arbeit steckt drin.'],
+                ['type' => 'Label', 'caption' => 'Lizenz: PolyForm Noncommercial 1.0.0 — privat und nicht-kommerziell frei nutzbar, für den gewerblichen Einsatz braucht es eine gesonderte Lizenz vom Rechteinhaber.'],
+                ['type' => 'Button', 'caption' => 'Lizenztext ansehen', 'onClick' => "echo '" . self::LICENSE_URL . "';", 'link' => true],
+                ['type' => 'Label', 'caption' => 'Gewerbliche Nutzung oder Fragen zur Lizenz? Einfach melden: dietmar@gureth.eu'],
+                ['type' => 'Label', 'caption' => 'Gefällt dir das Modul und du möchtest trotzdem etwas dalassen? Über eine kleine Spende freue ich mich — völlig freiwillig, keine Gegenleistung nötig.'],
+                ['type' => 'Button', 'caption' => '☕  Spenden via PayPal', 'onClick' => "echo '" . self::PAYPAL_URL . "';", 'link' => true],
+            ],
+        ];
     }
 
     private const FEEDIN_SINGLE_FIELDS = ['FeedInContactVarID', 'FeedInContactInverted', 'FeedInLimitPercent'];
@@ -290,7 +431,7 @@ class SteuerboxHub extends IPSModule
 
     private function injectVersionIntoDocPanel(array &$form): void
     {
-        $lib    = @IPS_GetLibrary('{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}');
+        $lib    = @IPS_GetLibrary(self::LIBRARY_GUID);
         $verTxt = (is_array($lib) && isset($lib['Version']))
             ? 'ℹ️ SteuerboxHub Version ' . $lib['Version'] . ' (Build ' . ($lib['Build'] ?? '?') . ')'
             : 'ℹ️ SteuerboxHub';
@@ -307,14 +448,6 @@ class SteuerboxHub extends IPSModule
     {
         if ($message === IPS_KERNELSTARTED) {
             if ($this->ReadPropertyInteger('Transport') === 1) {
-                $this->eebusRegister();
-                $this->eebusTick(false);
-            }
-            return;
-        }
-        if ($message === FM_CONNECT || $message === FM_DISCONNECT) {
-            if ($this->ReadPropertyInteger('Transport') === 1 && IPS_GetKernelRunlevel() === KR_READY) {
-                $this->eebusMarkUnregistered();
                 $this->eebusRegister();
                 $this->eebusTick(false);
             }
@@ -456,14 +589,17 @@ class SteuerboxHub extends IPSModule
      * GZF = 0 (Standard) bedeutet automatisch nach BNetzA-Tabelle: max(0,9 - 0,05 × n; 0,45),
      * also n=2: 0,80 ... n>=9: 0,45 (deckt sich mit dem Symcon-Energiemanager, Quelle KEDi/dena).
      * Werte kommen direkt aus dem Formular, damit auch ungespeicherte Eingaben zählen.
+     * Rückgabe: Hinweistext fürs Formular (echo), nicht maschinell auswerten.
      */
-    public function CalculateGZF(int $consumerCount = 1, float $gzfOverride = 0.0)
+    public function CalculateGZF(int $consumerCount, float $gzfOverride)
     {
         $n   = max(1, $consumerCount);
         $gzf = $gzfOverride > 0 ? min(1.0, $gzfOverride) : max(0.9 - 0.05 * $n, 0.45);
         $pMin = 4.2 + ($n - 1) * $gzf * 4.2;
 
         $this->UpdateFormField('LoadPMin', 'value', round($pMin, 2));
+        return sprintf('✅ Pmin = %s kW (n = %d, Gleichzeitigkeitsfaktor %s) ins Feld eingetragen. Gespeichert ist der Wert erst mit „Übernehmen“.',
+            self::fmt($pMin), $n, self::fmt($gzf));
     }
 
     // Final freigegebener Vertrag für das EMS (Dietmar, 24.07.2026).
@@ -537,7 +673,7 @@ class SteuerboxHub extends IPSModule
         if ($retryRegister && !$this->eebusIsRegistered()) {
             $this->eebusRegister();
         }
-        $remote = $this->eebusParentID() > 0 ? json_decode((string) $this->eebusCall(['Cmd' => 'GetState']), true) : null;
+        $remote = $this->eebusGatewayID() > 0 ? json_decode((string) $this->eebusCall(['Cmd' => 'GetState']), true) : null;
 
         $sync = $this->eebusUpdate(function (array &$st, int $now) use ($remote) {
             if (is_array($remote) && isset($remote['connected'])) {
@@ -545,7 +681,7 @@ class SteuerboxHub extends IPSModule
                 $st['trustPending'] = (bool) ($remote['trustPending'] ?? false);
                 $st['remoteShipId'] = (string) ($remote['remoteShipId'] ?? $st['remoteShipId']);
                 $st['heartbeatLost'] = (bool) ($remote['heartbeatLost'] ?? false);
-            } elseif ($this->eebusParentID() === 0) {
+            } elseif ($this->eebusGatewayID() === 0) {
                 $st['connected'] = false;
             }
             return [];
@@ -553,14 +689,17 @@ class SteuerboxHub extends IPSModule
         $this->eebusSend($sync);
     }
 
-    public function ReceiveData($JSONString)
+    /** SBH_ProcessEEBus($id, $bridgeID, $json): Ereignis des Gateways, von der Brücke weitergereicht. */
+    public function ProcessEEBus(int $bridgeID, string $json)
     {
-        $d = json_decode((string) $JSONString, true);
-        if (!is_array($d) || ($d['DataID'] ?? '') !== self::EEBGW_DATA_TO_CHILD || $this->ReadPropertyInteger('Transport') !== 1) {
+        $d = json_decode($json, true);
+        if (!is_array($d) || ($d['DataID'] ?? '') !== self::EEBGW_DATA_TO_CHILD || $this->ReadPropertyInteger('Transport') !== 1
+            || $bridgeID === 0 || $bridgeID !== $this->eebusBridgeID()) {
             return '';
         }
+        // Target = Instanz, die beim Gateway angemeldet ist (die Brücke), 0 = an alle.
         $target = (int) ($d['Target'] ?? 0);
-        if ($target !== 0 && $target !== $this->InstanceID) {
+        if ($target !== 0 && $target !== $bridgeID) {
             return '';
         }
         $event = (string) ($d['Event'] ?? '');
@@ -842,50 +981,59 @@ class SteuerboxHub extends IPSModule
         return $st;
     }
 
-    private function eebusParentID(): int
+    /** Brücke SteuerboxHubEEBUS: eingetragen oder, wenn genau eine existiert, automatisch. */
+    private function eebusBridgeID(): int
     {
-        $inst = @IPS_GetInstance($this->InstanceID);
-        $parent = is_array($inst) ? (int) ($inst['ConnectionID'] ?? 0) : 0;
-        if ($parent <= 0 || !IPS_InstanceExists($parent)) {
+        $id = $this->ReadPropertyInteger('EEBusBridgeID');
+        if ($id === 0) {
+            $all = array_values(array_filter((array) @IPS_GetInstanceListByModuleID(self::BRIDGE_MODULE_ID), 'IPS_InstanceExists'));
+            return count($all) === 1 ? $all[0] : 0;
+        }
+        if (!IPS_InstanceExists($id) || (string) (IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') !== self::BRIDGE_MODULE_ID) {
             return 0;
         }
-        return (string) (IPS_GetInstance($parent)['ModuleInfo']['ModuleID'] ?? '') === self::EEBGW_MODULE_ID ? $parent : 0;
+        return $id;
     }
 
-    /** Anfrage an das Gateway; Antwort als JSON-String, '' ohne Gateway oder bei Fehler. */
+    /** Gateway, an dem die Brücke hängt (0 = keine Brücke oder kein Gateway). */
+    private function eebusGatewayID(): int
+    {
+        $bridge = $this->eebusBridgeID();
+        if ($bridge === 0) {
+            return 0;
+        }
+        $gw = (int) (IPS_GetInstance($bridge)['ConnectionID'] ?? 0);
+        if ($gw <= 0 || !IPS_InstanceExists($gw)) {
+            return 0;
+        }
+        return (string) (IPS_GetInstance($gw)['ModuleInfo']['ModuleID'] ?? '') === self::EEBGW_MODULE_ID ? $gw : 0;
+    }
+
+    /** Anfrage über die Brücke an das Gateway; Antwort als JSON-String, '' ohne Brücke/Gateway oder bei Fehler. */
     private function eebusCall(array $request): string
     {
-        if ($this->eebusParentID() === 0) {
+        $bridge = $this->eebusBridgeID();
+        if ($bridge === 0 || !function_exists('SBHE_Forward')) {
             return '';
         }
-        $request = ['DataID' => self::EEBGW_DATA_TO_GATEWAY, 'Sender' => $this->InstanceID] + $request;
         try {
-            return (string) $this->SendDataToParent(json_encode($request));
+            return (string) SBHE_Forward($bridge, json_encode($request));
         } catch (Throwable $e) {
-            $this->LogMessage('EEBUS: Anfrage ' . ($request['Cmd'] ?? '?') . ' an das Gateway fehlgeschlagen: ' . $e->getMessage(), KL_WARNING);
+            $this->LogMessage('EEBUS: Anfrage ' . ($request['Cmd'] ?? '?') . ' über die Anbindung #' . $bridge . ' fehlgeschlagen: ' . $e->getMessage(), KL_WARNING);
             return '';
         }
     }
 
     private function eebusIsRegistered(): bool
     {
-        $parent = $this->eebusParentID();
-        return $parent > 0 && $this->eebusLoadState()['registeredWith'] === $parent;
-    }
-
-    private function eebusMarkUnregistered(): void
-    {
-        $st = $this->eebusLoadState();
-        $st['registeredWith'] = 0;
-        $st['entity'] = 0;
-        $st['connected'] = false;
-        $this->WriteAttributeString('EEBusState', json_encode($st));
+        $gw = $this->eebusGatewayID();
+        return $gw > 0 && $this->eebusLoadState()['registeredWith'] === $gw;
     }
 
     /** Entität mit LPC und LPP anmelden und alle Feature-Daten melden. */
     private function eebusRegister(): void
     {
-        $parent = $this->eebusParentID();
+        $parent = $this->eebusGatewayID();
         if ($parent === 0) {
             $this->eebusUpdateStatus();
             return;
@@ -996,7 +1144,7 @@ class SteuerboxHub extends IPSModule
             return;
         }
         $st = $this->eebusLoadState();
-        if ($this->eebusParentID() === 0) {
+        if ($this->eebusGatewayID() === 0) {
             $status = 104;
         } elseif ($st['registeredWith'] === 0 && $st['registerError'] !== '') {
             $status = 203;
@@ -1010,6 +1158,29 @@ class SteuerboxHub extends IPSModule
         if ($this->GetStatus() !== $status) {
             $this->SetStatus($status);
         }
+    }
+
+    /**
+     * Formular-Knopf: legt die Brücke SteuerboxHubEEBUS an, verbindet sie mit dem EEBUS-Gateway,
+     * wenn genau eines existiert, und trägt sie in die offene Maske ein (gespeichert erst mit
+     * „Übernehmen“). Rückgabe: Hinweistext fürs Formular (echo).
+     */
+    public function CreateEEBusBridge()
+    {
+        $id = IPS_CreateInstance(self::BRIDGE_MODULE_ID);
+        IPS_SetName($id, 'EEBUS-Anbindung ' . IPS_GetName($this->InstanceID));
+        IPS_SetParent($id, IPS_GetParent($this->InstanceID));
+        $gws = array_values(array_filter((array) @IPS_GetInstanceListByModuleID(self::EEBGW_MODULE_ID), 'IPS_InstanceExists'));
+        $text = '✅ EEBUS-Anbindung #' . $id . ' angelegt';
+        if (count($gws) === 1) {
+            IPS_ConnectInstance($id, $gws[0]);
+            $text .= ' und mit dem EEBUS-Gateway #' . $gws[0] . ' verbunden';
+        } else {
+            $text .= '. ' . ($gws === [] ? 'Noch kein EEBUS-Gateway vorhanden: zuerst ein „NRG-Stack EEBUS-Gateway“ anlegen, dann bei der Anbindung „Gateway ändern“.' : 'Mehrere EEBUS-Gateways: bei der Anbindung per „Gateway ändern“ das richtige zuordnen.');
+        }
+        IPS_ApplyChanges($id);
+        $this->UpdateFormField('EEBusBridgeID', 'value', $id);
+        return $text . '. Zum Speichern der Auswahl „Übernehmen“ klicken.';
     }
 
     /** Formular: Statuszeilen des EEBus-Panels live füllen. */
@@ -1034,18 +1205,24 @@ class SteuerboxHub extends IPSModule
     private function eebusStatusLines(): array
     {
         $st     = $this->eebusLoadState();
-        $parent = $this->eebusParentID();
+        $bridge = $this->eebusBridgeID();
+        $parent = $this->eebusGatewayID();
         $now    = $this->now();
+        $bridgeCount = count((array) @IPS_GetInstanceListByModuleID(self::BRIDGE_MODULE_ID));
 
-        if ($parent === 0) {
-            $conn = 'ℹ️ Keine Verbindung zu einem NRG-Stack EEBUS-Gateway. In der Konsole bei dieser Instanz „Gateway ändern“ wählen und das Gateway zuordnen (oder dort neu anlegen). Ohne Gateway liefert dieser Weg keine Signale.';
+        if ($bridge === 0) {
+            $conn = $bridgeCount > 1 && $this->ReadPropertyInteger('EEBusBridgeID') === 0
+                ? '⚠️ Mehrere EEBUS-Anbindungen vorhanden: unten die gewünschte auswählen.'
+                : 'ℹ️ Noch keine EEBUS-Anbindung: unten „EEBUS-Anbindung anlegen“ klicken. Sie wird mit dem EEBUS-Gateway verbunden (oder dort per „Gateway ändern“ zugeordnet). Ohne sie liefert dieser Weg keine Signale.';
+        } elseif ($parent === 0) {
+            $conn = 'ℹ️ Die EEBUS-Anbindung #' . $bridge . ' hängt an keinem NRG-Stack EEBUS-Gateway: dort „Gateway ändern“ wählen und das Gateway zuordnen (oder neu anlegen).';
         } elseif ($st['registeredWith'] === 0) {
             $conn = '⚠️ Gateway #' . $parent . ' (' . IPS_GetName($parent) . ') hat die Anmeldung nicht bestätigt: ' . ($st['registerError'] !== '' ? $st['registerError'] : 'noch keine Antwort') . '.';
         } elseif ($st['trustPending']) {
             $conn = '⚠️ Gateway #' . $parent . ' (' . IPS_GetName($parent) . '): die Steuerbox hat das Gateway noch nicht freigegeben (SKI des Gateways beim Netz- bzw. Messstellenbetreiber eintragen lassen).';
         } elseif ($st['connected']) {
             $uc = $st['remoteUseCases'] !== [] ? ', bietet ' . implode('/', $st['remoteUseCases']) : '';
-            $conn = '✅ Verbunden über Gateway #' . $parent . ' (' . IPS_GetName($parent) . ') mit Steuerbox ' . ($st['remoteShipId'] !== '' ? $st['remoteShipId'] : '?') . $uc . '; angemeldet als Entität ' . $st['entity'] . ' (LPC und LPP).';
+            $conn = '✅ Verbunden über Anbindung #' . $bridge . ' und Gateway #' . $parent . ' (' . IPS_GetName($parent) . ') mit Steuerbox ' . ($st['remoteShipId'] !== '' ? $st['remoteShipId'] : '?') . $uc . '; angemeldet als Entität ' . $st['entity'] . ' (LPC und LPP).';
         } else {
             $conn = '⚠️ Angemeldet bei Gateway #' . $parent . ' (' . IPS_GetName($parent) . '), aber gerade keine Verbindung zur Steuerbox' . ($st['lastAlive'] > 0 ? ' (zuletzt erreichbar ' . date('d.m.Y H:i', $st['lastAlive']) . ' Uhr)' : '') . '.';
         }
