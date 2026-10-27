@@ -1,7 +1,7 @@
 # SteuerboxHub
 
 ![Symcon](https://img.shields.io/badge/Symcon-PHPModul-blue)
-![Modul Version](https://img.shields.io/badge/Modul_Version-0.1.0-blue)
+![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.1-blue)
 ![Symcon Version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
 [![Check Style](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml)
@@ -11,9 +11,21 @@ IP-Symcon-Modul zur Erfassung des Dimm-/Steuersignals des Netzbetreibers nach **
 (Steuerung steuerbarer Verbrauchseinrichtungen) und Bereitstellung an ein EMS als Constraint
 oberster Priorität.
 
-**Status: Gerüst.** Die konkrete Signal-Erfassung ist noch nicht implementiert — die
-Steuerbox-Hardware existiert noch nicht. Das Repo reserviert Name/Prefix (`SBH`) und
-dokumentiert den geplanten Vertrag.
+Zwei Transportwege:
+
+- **Potentialfreie Kontakte** (Rundsteuerempfänger-Schema, FNN-Dreistufenschema W3/S1/S2) über
+  bestehende Symcon-Variablen eines I/O-Moduls oder Digitalisierers. Der Zielwert Pmin wird in
+  der Instanz eingestellt (mit Gleichzeitigkeitsfaktor-Rechenhilfe).
+- **EEBUS** (ab 0.2.0): SteuerboxHub meldet sich über die **EEBUS-Anbindung** (zweites Modul
+  dieser Bibliothek, Präfix `SBHE`) beim **NRG-Stack EEBUS-Gateway** mit den Anwendungsfällen
+  LPC und LPP (Begrenzung von Bezug und Einspeisung) an. Einrichtung: Gateway anlegen und
+  koppeln, dann in SteuerboxHub Transportweg EEBUS wählen und „EEBUS-Anbindung anlegen“. Die Steuerbox schreibt Grenzen in Watt, auf Wunsch befristet. Fehlt ihr Lebenszeichen
+  länger als 120 s, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die
+  Mindestdauer (2 bis 24 h) abgelaufen ist. Bisher geprüft gegen den Steuerbox-Simulator
+  `controlbox` aus eebus-go (über das Gateway), noch nicht mit einer echten Steuerbox.
+
+Ohne Gateway bleibt das Modul voll nutzbar (Kontakte-Weg); der EEBUS-Weg meldet dann nur
+„nicht konfiguriert“.
 
 ## Warum ein eigenes Modul (nicht ins EMS integriert)
 
@@ -32,20 +44,31 @@ dokumentiert den geplanten Vertrag.
 - **Hubs** bieten Stellhebel und führen je Gerät aus (z. B. HeishaMon: Heizstab sperren + Quiet
   Mode als §14a-Hebel, ChargerHub: Ladepunkt-Budget senken).
 
-## Geplanter Vertrag `SBH_GetState($id): array`
+## Vertrag `SBH_GetState($id): array` (contractVersion 1.0)
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `dimmActive` | bool | Liegt gerade ein Dimm-/Steuerbefehl an? |
-| `pMax` | float | Erlaubte Maximalleistung in W (z. B. 4200) |
-| `since` | int | Unix-Zeitpunkt, seit wann der Zustand gilt |
-| `source` | string | Quelle/Transport (`contact` \| `eebus` \| …) |
+| `source` | string | `contacts` oder `eebus` |
+| `loadDimmActive` | bool | Bezugsgrenze wirksam |
+| `loadPMin` | float | Erlaubter Bezug der steuerbaren Verbraucher in kW (0 ohne Grenze) |
+| `loadSince` | int | Unix-Zeitpunkt, seit dem die Bezugsgrenze gilt (0 = keine) |
+| `feedInDimmActive` | bool | Einspeisegrenze wirksam |
+| `feedInLimitPercent` | float | Erlaubte Einspeisung in % (100 = unbegrenzt); bei EEBUS bezogen auf die eingetragene installierte PV-Leistung (kWp, wie im EMS) |
+| `feedInSince` | int | Unix-Zeitpunkt, seit dem die Einspeisegrenze gilt (0 = keine) |
 
 Beim Aufrufer (EMS) stets hinter `function_exists('SBH_GetState')`.
 
 **Hinweis zur Abgrenzung:** Zeitvariable Netzentgelte nach **Modul 3** sind KEIN
 Steuerbox-Thema, sondern reine Preisinformation → sie gehören in die Preiskurven-/Tarif-
 Verträge (TibberGridRewards), nicht hierher.
+
+## Prüfstand
+
+```
+php .tools/test-eebus.php                                  # EEBUS-Weg gegen eine Gateway-Attrappe
+php .tools/test-eebus.php --gateway /pfad/EEBUSGateway     # zusätzlich am echten Gateway-Code
+php .tools/check-standalone.php                            # Eigenständigkeit
+```
 
 ## Lizenz
 

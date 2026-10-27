@@ -29,7 +29,7 @@ getrennten Sitzungen gearbeitet:
    `UpdateFormField` (nie `IPS_SetProperty`+`ApplyChanges` selbst), `vendor=""`, `library.json`
    `url` Pflicht, keine Emojis in Anzeigetexten, Klassenname = Modulname.
 
-## Transportwege (geplant, noch nicht implementiert)
+## Transportwege (beide gebaut, EEBUS seit 0.2.0)
 
 **Zielweg ist ausschließlich EEBus** (Dietmar, 24.07.2026, aus Branchenkenntnis: Zählermonteure
 bestätigen, dass verbaute FREs beim Steuerbox-Einbau zurückgebaut werden — Kontakte sind
@@ -53,6 +53,28 @@ ADAM-Module/Shellys, falls versehentlich eine reine Kontakt-Steuerbox verbaut wu
   eher bei Wärmepumpen) — welche konkreten Werte/Wertebereiche/Nachrichten die tatsächlich
   verbaute Steuerbox (Ziel: SELEXA) liefert, muss dieses Modul beim Bau selbst herausfinden;
   das ist NICHT Teil des `SBH_GetState`-Vertrags, sondern interne Übersetzungsarbeit.
+
+**EEBUS-Weg, Stand 27.10.2026 (0.3.0):** Kind-Instanz des NRG-Stack EEBUS-Gateways (Präfix
+EEBGW, eigenes Repo; Schnittstelle `EEBUSGateway/.docs/kind-schnittstelle.md`, DataIDs
+`{26D4DA14-…}` Kind→Gateway, `{12D8B8A8-…}` Gateway→Kind) ist die **Brücke `SteuerboxHubEEBUS`**
+(Präfix `SBHE`, nur Durchreiche: `SBHE_Forward` setzt DataID/Sender, `ReceiveData` ruft
+`SBH_ProcessEEBus(sbh, bridgeID, json)` bei allen SteuerboxHub-Instanzen). **Nie wieder
+`parentRequirements` an SteuerboxHub selbst:** sonst zeigt jede Kontakte-Instanz „benötigt eine
+übergeordnete Instanz“ (live 27.10.2026, wie MeterHub/InverterHub 19.09.2026). Zustandsmaschine
+und Formular bleiben in SteuerboxHub; Brücke per Property `EEBusBridgeID` (0 = automatisch bei
+genau einer) oder Knopf `SBH_CreateEEBusBridge`. Den Gateway-Code hier nie ändern;
+Schnittstellenwünsche an Dietmar. Ohne Brücke/Gateway: Status 104, kein Fehler.
+- Anmeldung: Entität `CEM`, LPC+LPP als `ControllableSystem`, Szenarien 1–4; Features LoadControl
+  (limitId 0 = Bezug, 1 = Einspeisung, Wert ≤ 0), DeviceConfiguration (keyId 0/1/2 =
+  failsafeConsumption/-DurationMinimum/-Production), ElectricalConnection (Nennleistungen).
+- Zustandsmaschine in `module.php` (Kommentar „EEBus-Weg“): unpaired / normal / failsafe /
+  autonomous. 120 s ohne Lebenszeichen → failsafe; Ende nur durch neuen Grenzwert oder
+  Mindestdauer. Das Gateway meldet `heartbeat lost` nur bei bestehender Verbindung, deshalb
+  erkennt der eigene Timer (`SBH_CheckEEBus`, 10 s, fragt `GetState` am Gateway) auch
+  Verbindungsabbrüche und Neustarts selbst.
+- Watt → `feedInLimitPercent` über die eingetragene installierte PV-Leistung (kWp; das EMS rechnet mit derselben Größe zurück); fehlt sie, 0 %
+  (Formular ⛔). `loadPMin` = Grenze/1000, im Ausfall die Ausfallgrenze (Vorgabe: LoadPMin).
+- Prüfstand: `php .tools/test-eebus.php [--gateway <Pfad>]`.
 
 ## Abgrenzung: Modul 3 gehört NICHT hierher
 

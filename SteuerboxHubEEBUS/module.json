@@ -1,0 +1,18 @@
+{
+  "id": "{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}",
+  "name": "SteuerboxHubEEBUS",
+  "type": 3,
+  "vendor": "",
+  "aliases": [
+    "NRG-Stack SteuerboxHub EEBUS-Anbindung"
+  ],
+  "url": "https://github.com/DG65/NRGSteuerboxHub",
+  "parentRequirements": [
+    "{26D4DA14-6C0D-4686-AE00-D23234BAD90D}"
+  ],
+  "childRequirements": [],
+  "implemented": [
+    "{12D8B8A8-3EE7-491F-A68A-D632304165D4}"
+  ],
+  "prefix": "SBHE"
+}

@@ -28,6 +28,10 @@
         {
           "type": "Label",
           "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar."
+        },
+        {
+          "type": "Label",
+          "caption": "EEBUS-Weg: Das NRG-Stack EEBUS-Gateway (eigenes Modul) hält Zertifikat, Kopplung und Verbindung zur Steuerbox. Daran hängt die „EEBUS-Anbindung“ aus diesem Modul, die SteuerboxHub mit dem Gateway verbindet (Knopf im Abschnitt EEBUS). Die Steuerbox schreibt Grenzen in Watt für Bezug (LPC) und Einspeisung (LPP), auf Wunsch befristet. Fällt ihr Lebenszeichen länger als 120 s aus, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die Mindestdauer (2 bis 24 h) abgelaufen ist."
         }
       ]
     },
@@ -39,26 +43,21 @@
         {
           "caption": "Potentialfreie Kontakte (Rundsteuerempfänger-Vierstufenschema, §14a-Variante)",
           "value": 0
+        },
+        {
+          "caption": "EEBUS (Steuerbox über das NRG-Stack EEBUS-Gateway)",
+          "value": 1
         }
-      ]
+      ],
+      "onChange": "SBH_ToggleTransport($id, $Transport);"
     },
     {
       "type": "ExpansionPanel",
-      "caption": "Potentialfreie Kontakte",
+      "caption": "Mindestleistung nach §14a (Pmin)",
       "items": [
         {
           "type": "Label",
-          "caption": "Klassisches Rundsteuerempfänger-Vierstufenschema (RCR) 0/30/60/100 %, wie es viele Netzbetreiber/Steuerboxen unabhängig vom Hersteller verwenden. Bei der §14a-Variante ersetzt das §14a-Signal die 100-%-Meldung: Kontakt inaktiv = keine Abregelung (100 %), Kontakt aktiv = Lastbegrenzung wirksam. Nur die Eingangsvariable(n) werden hier verknüpft (siehe Hinweis oben) — welches Fabrikat die Steuerbox/der Digitalisierer hat, spielt keine Rolle."
-        },
-        {
-          "type": "SelectVariable",
-          "name": "LoadContactVarID",
-          "caption": "Eingangsvariable Lastbegrenzung aktiv (bool)"
-        },
-        {
-          "type": "CheckBox",
-          "name": "LoadContactInverted",
-          "caption": "Signal invertiert (Ruhekontakt / Öffner)"
+          "caption": "Kontakte-Weg: dieser Wert gilt als Bezugsgrenze, solange der Kontakt aktiv ist. EEBUS-Weg: Vorgabe für die Ausfallgrenze Bezug, bis die Steuerbox eine eigene schreibt."
         },
         {
           "type": "ExpansionPanel",
@@ -85,17 +84,37 @@
             {
               "type": "Button",
               "caption": "Pmin berechnen und übernehmen",
-              "onClick": "SBH_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
+              "onClick": "echo SBH_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
             }
           ]
         },
         {
           "type": "NumberSpinner",
           "name": "LoadPMin",
-          "caption": "Netzwirksamer Leistungsbezug lt. §14a (loadPMin)",
+          "caption": "Netzwirksamer Leistungsbezug lt. §14a (Pmin)",
           "digits": 2,
           "suffix": " kW",
           "minimum": 0
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Potentialfreie Kontakte",
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Klassisches Rundsteuerempfänger-Vierstufenschema (RCR) 0/30/60/100 %, wie es viele Netzbetreiber/Steuerboxen unabhängig vom Hersteller verwenden. Bei der §14a-Variante ersetzt das §14a-Signal die 100-%-Meldung: Kontakt inaktiv = keine Abregelung (100 %), Kontakt aktiv = Lastbegrenzung wirksam. Nur die Eingangsvariable(n) werden hier verknüpft (siehe Hinweis oben) — welches Fabrikat die Steuerbox/der Digitalisierer hat, spielt keine Rolle."
+        },
+        {
+          "type": "SelectVariable",
+          "name": "LoadContactVarID",
+          "caption": "Eingangsvariable Lastbegrenzung aktiv (bool)"
+        },
+        {
+          "type": "CheckBox",
+          "name": "LoadContactInverted",
+          "caption": "Signal invertiert (Ruhekontakt / Öffner)"
         },
         {
           "type": "Select",
@@ -168,6 +187,75 @@
           "suffix": " s",
           "minimum": 0
         }
+      ],
+      "name": "ContactsPanel"
+    },
+    {
+      "type": "ExpansionPanel",
+      "name": "EEBusPanel",
+      "caption": "EEBUS",
+      "items": [
+        {
+          "type": "Label",
+          "name": "EEBusConnectionLine",
+          "caption": "(wird beim Öffnen berechnet)"
+        },
+        {
+          "type": "Label",
+          "name": "EEBusStateLine",
+          "caption": "(wird beim Öffnen berechnet)"
+        },
+        {
+          "type": "Label",
+          "name": "EEBusFailsafeLine",
+          "caption": "(wird beim Öffnen berechnet)"
+        },
+        {
+          "type": "SelectInstance",
+          "name": "EEBusBridgeID",
+          "caption": "EEBUS-Anbindung (leer = automatisch, wenn es genau eine gibt)",
+          "validModules": [
+            "{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}"
+          ]
+        },
+        {
+          "type": "Button",
+          "caption": "EEBUS-Anbindung anlegen",
+          "onClick": "echo SBH_CreateEEBusBridge($id);"
+        },
+        {
+          "type": "Label",
+          "caption": "Nennwerte der gesteuerten Anlage, die die Steuerbox abfragt (0 = nicht angegeben)."
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "EEBusConsumptionNominalKw",
+          "caption": "Höchste Bezugsleistung der gesteuerten Verbraucher",
+          "digits": 2,
+          "suffix": " kW",
+          "minimum": 0
+        },
+        {
+          "type": "Label",
+          "name": "EEBusProductionNominalLine",
+          "caption": "(wird beim Öffnen berechnet)"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "EEBusProductionNominalKw",
+          "caption": "Installierte PV-Leistung",
+          "digits": 2,
+          "suffix": " kWp",
+          "minimum": 0
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "EEBusFailsafeProductionKw",
+          "caption": "Vorgabe Ausfallgrenze Einspeisung (0 = keine Vorgabe, im Ausfall unbegrenzt)",
+          "digits": 2,
+          "suffix": " kW",
+          "minimum": 0
+        }
       ]
     },
     {
@@ -186,7 +274,7 @@
     {
       "code": 104,
       "icon": "inactive",
-      "caption": "Noch nicht konfiguriert: keine Eingangsvariable gewählt."
+      "caption": "Noch nicht konfiguriert: keine Eingangsvariable gewählt bzw. kein EEBUS-Gateway zugeordnet."
     },
     {
       "code": 202,
@@ -194,9 +282,24 @@
       "caption": "Eine gewählte Eingangsvariable existiert nicht mehr."
     },
     {
+      "code": 203,
+      "icon": "error",
+      "caption": "EEBUS: Anmeldung beim Gateway fehlgeschlagen (Meldungen prüfen)."
+    },
+    {
+      "code": 204,
+      "icon": "error",
+      "caption": "EEBUS: Steuerbox nicht erreichbar – Ausfallgrenze gilt bzw. galt (Details im Formular)."
+    },
+    {
       "code": 205,
       "icon": "error",
       "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen."
+    },
+    {
+      "code": 210,
+      "icon": "inactive",
+      "caption": "EEBUS: wartet auf die erste Verbindung zur Steuerbox (Kopplung im Gateway prüfen)."
     }
   ]
 }
