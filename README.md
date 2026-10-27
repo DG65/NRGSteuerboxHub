@@ -52,7 +52,7 @@ Ohne Gateway bleibt das Modul voll nutzbar (Kontakte-Weg); der EEBUS-Weg meldet 
 | `loadPMin` | float | Erlaubter Bezug der steuerbaren Verbraucher in kW (0 ohne Grenze) |
 | `loadSince` | int | Unix-Zeitpunkt, seit dem die Bezugsgrenze gilt (0 = keine) |
 | `feedInDimmActive` | bool | Einspeisegrenze wirksam |
-| `feedInLimitPercent` | float | Erlaubte Einspeisung in % (100 = unbegrenzt); bei EEBUS bezogen auf die eingetragene Nennleistung der Erzeugungsanlage |
+| `feedInLimitPercent` | float | Erlaubte Einspeisung in % (100 = unbegrenzt); bei EEBUS bezogen auf die eingetragene installierte PV-Leistung (kWp, wie im EMS) |
 | `feedInSince` | int | Unix-Zeitpunkt, seit dem die Einspeisegrenze gilt (0 = keine) |
 
 Beim Aufrufer (EMS) stets hinter `function_exists('SBH_GetState')`.

@@ -93,6 +93,8 @@ class SteuerboxHub extends IPSModule
         $this->RegisterPropertyString('EEBusSKI', '');
         // Nennwerte der gesteuerten Anlage, 0 = nicht angegeben. Die Erzeugungs-Nennleistung ist
         // zugleich Bezugsgröße für feedInLimitPercent (EEBUS liefert Watt, der Vertrag Prozent).
+        // Sie muss die installierte PV-Leistung (kWp) sein: Das EMS rechnet den Prozentwert mit
+        // genau dieser Größe in Watt zurück (live geprüft 27.10.2026: 3000 W → 32,7 % → 3002 W).
         $this->RegisterPropertyFloat('EEBusConsumptionNominalKw', 0.0);
         $this->RegisterPropertyFloat('EEBusProductionNominalKw', 0.0);
         // Vorgabe der Ausfallgrenze Einspeisung, bis die Steuerbox eine eigene schreibt.
@@ -775,7 +777,7 @@ class SteuerboxHub extends IPSModule
     }
 
     /**
-     * EEBUS liefert Watt, der Vertrag Prozent der Erzeugungs-Nennleistung. Ohne Nennleistung
+     * EEBUS liefert Watt, der Vertrag Prozent der installierten PV-Leistung (Bezugsgröße des EMS). Ohne Nennleistung
      * bleibt nur 0 % (sicher für das Netz); das Formular meldet das Feld dann als Pflicht.
      */
     private function eebusPercent(float $w): float
@@ -1076,8 +1078,8 @@ class SteuerboxHub extends IPSModule
             'EEBusFailsafeLine'   => ['caption' => 'Ausfallwerte: ' . $this->eebusFailsafeText($st) . '.'],
         ];
         $lines['EEBusProductionNominalLine'] = $this->ReadPropertyFloat('EEBusProductionNominalKw') > 0
-            ? ['caption' => '✏️ Bezugsgröße für die Einspeisegrenze in Prozent: ' . self::fmt($this->ReadPropertyFloat('EEBusProductionNominalKw')) . ' kW (eigene Eingabe).']
-            : ['caption' => '⛔ Pflichtangabe, sobald die Steuerbox die Einspeisung begrenzt: ohne Nennleistung meldet SteuerboxHub bei jeder Einspeisegrenze 0 % (keine Einspeisung), weil sich Watt nicht in Prozent umrechnen lassen.', 'color' => 0xFF0000];
+            ? ['caption' => '✏️ Bezugsgröße für die Einspeisegrenze in Prozent: ' . self::fmt($this->ReadPropertyFloat('EEBusProductionNominalKw')) . ' kWp (eigene Eingabe, muss zur PV-Leistung im EMS passen).']
+            : ['caption' => '⛔ Pflichtangabe, sobald die Steuerbox die Einspeisung begrenzt: ohne PV-Leistung meldet SteuerboxHub bei jeder Einspeisegrenze 0 % (keine Einspeisung), weil sich Watt nicht in Prozent umrechnen lassen.', 'color' => 0xFF0000];
         return $lines;
     }
 

@@ -66,7 +66,7 @@ DataIDs `{26D4DA14-…}` Kind→Gateway, `{12D8B8A8-…}` Gateway→Kind). Den G
   Mindestdauer. Das Gateway meldet `heartbeat lost` nur bei bestehender Verbindung, deshalb
   erkennt der eigene Timer (`SBH_CheckEEBus`, 10 s, fragt `GetState` am Gateway) auch
   Verbindungsabbrüche und Neustarts selbst.
-- Watt → `feedInLimitPercent` über die eingetragene Erzeugungs-Nennleistung; fehlt sie, 0 %
+- Watt → `feedInLimitPercent` über die eingetragene installierte PV-Leistung (kWp; das EMS rechnet mit derselben Größe zurück); fehlt sie, 0 %
   (Formular ⛔). `loadPMin` = Grenze/1000, im Ausfall die Ausfallgrenze (Vorgabe: LoadPMin).
 - Prüfstand: `php .tools/test-eebus.php [--gateway <Pfad>]`.
 

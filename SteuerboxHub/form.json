@@ -230,7 +230,7 @@
         {
           "type": "NumberSpinner",
           "name": "EEBusProductionNominalKw",
-          "caption": "Nennleistung der Erzeugungsanlage (Wechselrichter, AC)",
+          "caption": "Installierte PV-Leistung (kWp, dieselbe Bezugsgröße wie im EMS)",
           "digits": 2,
           "suffix": " kW",
           "minimum": 0
