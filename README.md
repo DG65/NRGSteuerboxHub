@@ -27,6 +27,23 @@ Zwei Transportwege:
 Ohne Gateway bleibt das Modul voll nutzbar (Kontakte-Weg); der EEBUS-Weg meldet dann nur
 „nicht konfiguriert“.
 
+## Installation
+
+Über den **Symcon Module Store** in der Verwaltungskonsole: nach **SteuerboxHub** suchen und
+installieren. Die Bibliothek bringt zwei Module mit:
+„NRG-Stack SteuerboxHub“ und „NRG-Stack SteuerboxHub EEBUS-Anbindung“.
+
+Für den EEBUS-Weg zusätzlich **NRG-Stack EEBUS-Gateway** aus dem Store installieren
+(Suchbegriff **EEBUS**). Danach:
+
+1. Instanz „NRG-Stack EEBUS-Gateway“ anlegen, Adresse und Port der Steuerbox eintragen,
+   „Gegenstelle prüfen“, SKI vergleichen und übernehmen; den SKI des Gateways bei der
+   Gegenstelle (bzw. beim Messstellenbetreiber) freigeben.
+2. Instanz „NRG-Stack SteuerboxHub“ anlegen, Transportweg EEBUS wählen, „EEBUS-Anbindung
+   anlegen“ klicken und für die Einspeisegrenze die installierte PV-Leistung (kWp) eintragen.
+
+Für den Kontakte-Weg reicht SteuerboxHub allein.
+
 ## Warum ein eigenes Modul (nicht ins EMS integriert)
 
 1. **Rechtspflicht vor Optimierung:** §14a ist verpflichtend und muss auch greifen/nachweisbar
