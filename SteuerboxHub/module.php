@@ -248,6 +248,7 @@ class SteuerboxHub extends IPSModule
     private const LIBRARY_GUID = '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}';
     private const REPO_URL     = 'https://github.com/DG65/NRGSteuerboxHub';
     private const ISSUES_URL   = 'https://github.com/DG65/NRGSteuerboxHub/issues';
+    private const FORUM_URL    = 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795';
     private const LICENSE_URL  = 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE';
     private const PAYPAL_URL   = 'https://paypal.me/DietmarGureth';
 
@@ -346,13 +347,13 @@ class SteuerboxHub extends IPSModule
         if ($this->ReadAttributeBoolean('ForumHintGone')) {
             return null;
         }
-        // Forum-Thread folgt mit der Veröffentlichung; bis dahin GitHub.
         return [
             'type' => 'ExpansionPanel', 'name' => 'ForumHintPanel', 'expanded' => true,
             'caption' => '💬  Rückmeldungen',
             'items' => [
                 ['type' => 'Label', 'caption' => '🧪 Welche Steuerbox bzw. welcher Rundsteuerempfänger ist bei dir verbaut, und kommt das Signal richtig an? Rückmeldungen mit Hersteller, Modell und Netzbetreiber helfen sehr, gerade beim EEBUS-Weg.'],
-                ['type' => 'Button', 'caption' => 'Fehler oder Erfahrung auf GitHub melden', 'onClick' => "echo '" . self::ISSUES_URL . "';", 'link' => true],
+                ['type' => 'Button', 'caption' => 'Zum Forums-Thread', 'onClick' => "echo '" . self::FORUM_URL . "';", 'link' => true],
+                ['type' => 'Button', 'caption' => 'Fehler auf GitHub melden', 'onClick' => "echo '" . self::ISSUES_URL . "';", 'link' => true],
                 ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckForumHint($id);'],
             ],
         ];

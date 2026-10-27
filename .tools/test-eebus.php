@@ -519,13 +519,15 @@ pruefe(strpos($caps[1], '0.3.0') !== false, 'News-Panel nennt die höchste neue 
 $lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
 $doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($doc, 'SteuerboxHub Version 0.3.1 (Build 4)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+pruefe(strpos($doc, 'SteuerboxHub Version 0.3.2 (Build 5)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+$fh = json_encode($form['elements'][count($caps) - 2], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+pruefe(strpos($fh, "echo 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795'") !== false && strpos($fh, 'Zum Forums-Thread') < strpos($fh, 'GitHub'), 'Rückmeldungen: Forums-Thread zuerst, GitHub-Issues als zweiter Knopf');
 $fk->AckPurposeIntro();
 $fk->AckNews();
 $fk->AckForumHint();
 $caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
-pruefe($fk->attrs['SeenNews'] === '0.3.1' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.3.1) und blendet sofort aus');
+pruefe($fk->attrs['SeenNews'] === '0.3.2' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.3.2) und blendet sofort aus');
 $fk->attrs['SeenNews'] = '0.2.0';
 $caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 $news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);

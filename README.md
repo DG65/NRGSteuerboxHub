@@ -1,7 +1,7 @@
 # SteuerboxHub
 
 ![Symcon](https://img.shields.io/badge/Symcon-PHPModul-blue)
-![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.1-blue)
+![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.2-blue)
 ![Symcon Version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
 [![Check Style](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGSteuerboxHub/actions/workflows/check-style.yml)
@@ -43,6 +43,9 @@ Für den EEBUS-Weg zusätzlich **NRG-Stack EEBUS-Gateway** aus dem Store install
    anlegen“ klicken und für die Einspeisegrenze die installierte PV-Leistung (kWp) eintragen.
 
 Für den Kontakte-Weg reicht SteuerboxHub allein.
+
+Fragen, Erfahrungen und Rückmeldungen gern im Forum:
+[Beta-Tester gesucht: NRG-Stack EEBUS-Gateway + SteuerboxHub](https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795)
 
 ## Warum ein eigenes Modul (nicht ins EMS integriert)
 

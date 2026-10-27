@@ -3,6 +3,12 @@
 Alle nennenswerten Änderungen an diesem Modul werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
+## [0.3.2] - 2026-10-27
+
+### Changed
+- „Rückmeldungen“ verweist auf den Forums-Thread (community.symcon.de, 144795), GitHub-Issues als
+  zweiter Knopf. README nennt den Thread.
+
 ## [0.3.1] - 2026-10-27
 
 ### Fixed
