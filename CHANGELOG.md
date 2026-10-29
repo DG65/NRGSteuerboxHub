@@ -3,6 +3,15 @@
 Alle nennenswerten Änderungen an diesem Modul werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
+## [0.4.0] - 2026-10-29
+
+### Added
+- „🪟 Formular: Aufbau“ (NRG-Stack-Konvention 3a): Je Fachpanel (Mindestleistung nach §14a,
+  Potentialfreie Kontakte, EEBUS) wählt der Nutzer „Aufgeklappt“, „Zugeklappt“ oder
+  „🙈 Ausgeblendet“ und eine Position 1–99; kein Haken = Standard. Ausgeblendete Bereiche
+  bleiben im Formular (`visible: false`), ihre Werte gehen nicht verloren. Knopf
+  „Auf Standard zurücksetzen“ (`SBH_ResetFormLayout`). Neue Einstellung `FormLayout`.
+
 ## [0.3.2] - 2026-10-27
 
 ### Changed

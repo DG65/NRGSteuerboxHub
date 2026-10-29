@@ -96,7 +96,8 @@
           "suffix": " kW",
           "minimum": 0
         }
-      ]
+      ],
+      "name": "PminPanel"
     },
     {
       "type": "ExpansionPanel",

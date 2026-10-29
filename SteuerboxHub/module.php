@@ -96,6 +96,7 @@ class SteuerboxHub extends IPSModule
         // 0 = automatisch, wenn genau eine Brücke existiert.
         $this->RegisterPropertyInteger('EEBusBridgeID', 0);
         // Ohne Funktion, siehe Klassenkommentar.
+        $this->RegisterPropertyString('FormLayout', '[]');
         $this->RegisterPropertyString('EEBusBridgeURL', '');
         $this->RegisterPropertyString('EEBusSKI', '');
         // Nennwerte der gesteuerten Anlage, 0 = nicht angegeben. Die Erzeugungs-Nennleistung ist
@@ -244,6 +245,9 @@ class SteuerboxHub extends IPSModule
             '• EEBUS: Die Einspeisegrenze wird auf die installierte PV-Leistung (kWp) bezogen, dieselbe Größe, mit der das EMS rechnet.',
             '• EEBUS: Ans Gateway hängt jetzt die eigene Instanz „NRG-Stack SteuerboxHub EEBUS-Anbindung“, nicht mehr SteuerboxHub selbst. Damit verschwindet auf dem Kontakte-Weg der Hinweis „benötigt eine übergeordnete Instanz“. Anlegen per Knopf im Abschnitt EEBUS.',
         ],
+        '0.4.0' => [
+            '• 🪟 Neu: Formular-Aufbau selbst wählen. Im Abschnitt „Formular: Aufbau“ (unten) legst du je Bereich fest, ob er beim Öffnen aufgeklappt, zugeklappt oder ausgeblendet ist und an welcher Stelle er steht.',
+        ],
     ];
     private const LIBRARY_GUID = '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}';
     private const REPO_URL     = 'https://github.com/DG65/NRGSteuerboxHub';
@@ -259,10 +263,40 @@ class SteuerboxHub extends IPSModule
         $this->applyFeedInVisibility($form['elements'], $this->ReadPropertyInteger('FeedInMode'));
         $this->applyTransportVisibility($form['elements'], $this->ReadPropertyInteger('Transport'));
         $this->injectEEBusStatus($form['elements']);
+        // Fachpanels (Punkt 3) herauslösen: Reihenfolge und Aufklapp-Zustand wählt der Nutzer („Formular: Aufbau“).
+        $head = [];
+        $free = [];
+        $tail = [];
+        foreach ($form['elements'] as $el) {
+            $key = self::FORM_PANELS[$el['name'] ?? ''] ?? null;
+            if ($key !== null) {
+                $free[$key] = $el;
+            } elseif ($free === []) {
+                $head[] = $el;
+            } else {
+                $tail[] = $el;
+            }
+        }
+        $layout = $this->formLayout(array_keys($free));
+        $middle = [];
+        foreach ($layout as $key => $l) {
+            $panel = $free[$key];
+            if ($l['open'] === 'open') {
+                $panel['expanded'] = true;
+            } elseif ($l['open'] === 'closed') {
+                $panel['expanded'] = false;
+            } elseif ($l['open'] === 'hidden') {
+                // Nicht weglassen: die Felder bleiben im Formular, gespeicherte Werte bleiben beim „Übernehmen“ erhalten.
+                $panel['visible'] = false;
+            }
+            $middle[] = $panel;
+        }
         $form['elements'] = array_values(array_filter(array_merge(
             [$this->formPurposeIntro(), $this->formNewsBanner()],
-            $form['elements'],
-            [$this->formForumHint(), $this->formLicenseHint()]
+            $head,
+            $middle,
+            $tail,
+            [$this->formLayoutPanel($layout), $this->formForumHint(), $this->formLicenseHint()]
         )));
         return json_encode($form);
     }
@@ -406,6 +440,101 @@ class SteuerboxHub extends IPSModule
         }
     }
 
+    // „Formular: Aufbau“ (SUITE.md Einheitliche Formular-Optik 3a): wählbare Fachpanels, Schlüssel je Panel-Name.
+    private const FORM_PANELS = ['PminPanel' => 'pmin', 'ContactsPanel' => 'contacts', 'EEBusPanel' => 'eebus'];
+    private const FORM_PANEL_LABELS = ['pmin' => 'Mindestleistung nach §14a', 'contacts' => 'Potentialfreie Kontakte', 'eebus' => 'EEBUS'];
+
+    /**
+     * Reihenfolge und Aufklapp-Zustand der Fachpanels aus der Einstellung „FormLayout“.
+     * Unbekannte oder fehlende Einträge fallen auf Standardreihenfolge und „Standard“ zurück.
+     *
+     * @param string[] $keys Schlüssel der Fachpanels in Standardreihenfolge
+     * @return array key => ['open' => 'std'|'open'|'closed'|'hidden', 'pos' => int, 'idx' => int], in anzuwendender Reihenfolge
+     */
+    private function formLayout(array $keys): array
+    {
+        $saved = json_decode((string) $this->ReadPropertyString('FormLayout'), true);
+        $by = [];
+        foreach (is_array($saved) ? $saved : [] as $row) {
+            if (is_array($row) && isset($row['Key'])) {
+                $by[(string) $row['Key']] = $row;
+            }
+        }
+        $out = [];
+        foreach ($keys as $i => $k) {
+            $r = $by[$k] ?? [];
+            // Vorrang bei Widerspruch: ausgeblendet vor zugeklappt vor aufgeklappt, kein Haken = Standard
+            $open = !empty($r['Hidden']) ? 'hidden' : (!empty($r['Closed']) ? 'closed' : (!empty($r['Opened']) ? 'open' : 'std'));
+            $out[$k] = [
+                'open' => $open,
+                'pos'  => isset($r['Pos']) ? max(1, min(99, (int) $r['Pos'])) : $i + 1,
+                'idx'  => $i,
+            ];
+        }
+        uasort($out, function ($a, $b) { return [$a['pos'], $a['idx']] <=> [$b['pos'], $b['idx']]; });
+        return $out;
+    }
+
+    private function formLayoutPanel(array $layout): array
+    {
+        $rows   = [];
+        $hidden = [];
+        foreach ($layout as $key => $l) {
+            $name   = self::FORM_PANEL_LABELS[$key] ?? $key;
+            $rows[] = ['Key' => $key, 'Panel' => $name, 'Opened' => $l['open'] === 'open', 'Closed' => $l['open'] === 'closed',
+                'Hidden' => $l['open'] === 'hidden', 'Pos' => $l['pos']];
+            if ($l['open'] === 'hidden') {
+                $hidden[] = $name;
+            }
+        }
+        $hiddenLine = $hidden
+            ? [['type' => 'Label', 'caption' => '🙈 Ausgeblendet: ' . implode(', ', $hidden) . ' — zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen. Ausgeblendete Bereiche arbeiten weiter, nur die Anzeige fehlt.']]
+            : [];
+        return [
+            'type' => 'ExpansionPanel', 'expanded' => false, 'name' => 'LayoutPanel',
+            'caption' => '🪟  Formular: Aufbau' . ($hidden ? ' (' . count($hidden) . ' ausgeblendet)' : ''),
+            'items' => array_merge($hiddenLine, [
+                ['type' => 'Label', 'caption' => 'Hier legst du fest, welche Bereiche beim Öffnen des Formulars aufgeklappt sind und in welcher Reihenfolge sie stehen. Symcon merkt sich das Auf- und Zuklappen nicht selbst, deshalb gilt die Einstellung hier jedes Mal beim Öffnen. Sie wirkt nach „Übernehmen“ beim nächsten Öffnen des Formulars.'],
+                ['type' => 'Label', 'caption' => 'Kein Haken heißt „Standard“: wie das Modul es vorsieht. Die Position ist eine Zahl; bei gleicher Zahl bleibt die Standardreihenfolge. „Ausgeblendet“ nimmt einen Bereich aus der Anzeige, ohne dass er etwas verliert: seine Einstellungen bleiben erhalten und wirken weiter. Zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen oder „Auf Standard zurücksetzen“ klicken. Sind mehrere Haken gesetzt, gilt „Ausgeblendet“ vor „Zugeklappt“ vor „Aufgeklappt“. Die Bereiche oben (Zweck, Neu, Dokumentation), die Wahl des Transportwegs und unten (Rückmeldungen, Über dieses Modul) bleiben, wo sie sind und lassen sich nicht ausblenden.'],
+                [
+                    'type' => 'List', 'name' => 'FormLayout', 'caption' => 'Bereiche', 'rowCount' => count($rows), 'add' => false, 'delete' => false,
+                    'loadValuesFromConfiguration' => false,
+                    'values' => $rows,
+                    'columns' => [
+                        ['caption' => 'Bereich', 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
+                        ['caption' => 'Schlüssel', 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
+                        ['caption' => 'Aufgeklappt', 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => 'Zugeklappt', 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => '🙈 Ausgeblendet', 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => 'Position', 'name' => 'Pos', 'width' => '100px', 'add' => 1, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 1, 'maximum' => 99]],
+                    ],
+                ],
+                ['type' => 'Button', 'caption' => '↩️ Auf Standard zurücksetzen', 'onClick' => 'echo SBH_ResetFormLayout($id);'],
+            ]),
+        ];
+    }
+
+    /** Setzt Aufklapp-Zustand und Reihenfolge der Fachpanels im offenen Formular auf den Standard (gilt nach „Übernehmen“). */
+    public function ResetFormLayout(): string
+    {
+        $rows = [];
+        foreach (array_values(self::FORM_PANELS) as $i => $key) {
+            $rows[] = ['Key' => $key, 'Panel' => self::FORM_PANEL_LABELS[$key], 'Opened' => false, 'Closed' => false, 'Hidden' => false, 'Pos' => $i + 1];
+        }
+        $this->UpdateFormField('FormLayout', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
+        return 'ℹ️ Auf Standard gesetzt. Zum Speichern unten „Übernehmen“ klicken.';
+    }
+
+    /** Ob das Fachpanel im Formular-Aufbau ausgeblendet ist (dann darf die Transportwahl es nicht live einblenden). */
+    private function isPanelHidden(string $panelName): bool
+    {
+        $key = self::FORM_PANELS[$panelName] ?? null;
+        if ($key === null) {
+            return false;
+        }
+        return ($this->formLayout(array_values(self::FORM_PANELS))[$key]['open'] ?? 'std') === 'hidden';
+    }
+
     private const TRANSPORT_PANELS = ['ContactsPanel' => 0, 'EEBusPanel' => 1];
 
     private function applyTransportVisibility(array &$items, int $transport): void
@@ -426,7 +555,7 @@ class SteuerboxHub extends IPSModule
     public function ToggleTransport(int $transport)
     {
         foreach (self::TRANSPORT_PANELS as $name => $value) {
-            $this->UpdateFormField($name, 'visible', $value === $transport);
+            $this->UpdateFormField($name, 'visible', $value === $transport && !$this->isPanelHidden($name));
         }
     }
 

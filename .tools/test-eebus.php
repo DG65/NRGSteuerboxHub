@@ -515,11 +515,11 @@ $caps = array_map(function ($e) { return $e['caption'] ?? ($e['name'] ?? $e['typ
 $idx = function (string $needle) use ($caps) { foreach ($caps as $i => $c) { if (strpos((string) $c, $needle) !== false) { return $i; } } return -1; };
 pruefe($idx('Wozu dieses Modul') === 0 && $idx('Neu bis Version') === 1 && $idx('Dokumentation') === 2, 'Reihenfolge: Wozu → Neu bis Version → Dokumentation & Hilfe');
 pruefe($idx('Rückmeldungen') === count($caps) - 2 && $idx('Über dieses Modul') === count($caps) - 1, 'Rückmeldungen und „Über dieses Modul“ am Ende');
-pruefe(strpos($caps[1], '0.3.0') !== false, 'News-Panel nennt die höchste neue Version (0.3.0)');
+pruefe(strpos($caps[1], '0.4.0') !== false, 'News-Panel nennt die höchste neue Version (0.4.0)');
 $lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
 $doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($doc, 'SteuerboxHub Version 0.3.2 (Build 5)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+pruefe(strpos($doc, 'SteuerboxHub Version 0.4.0 (Build 6)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
 $fh = json_encode($form['elements'][count($caps) - 2], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($fh, "echo 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795'") !== false && strpos($fh, 'Zum Forums-Thread') < strpos($fh, 'GitHub'), 'Rückmeldungen: Forums-Thread zuerst, GitHub-Issues als zweiter Knopf');
 $fk->AckPurposeIntro();
@@ -527,11 +527,52 @@ $fk->AckNews();
 $fk->AckForumHint();
 $caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
-pruefe($fk->attrs['SeenNews'] === '0.3.2' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.3.2) und blendet sofort aus');
+pruefe($fk->attrs['SeenNews'] === '0.4.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.4.0) und blendet sofort aus');
 $fk->attrs['SeenNews'] = '0.2.0';
 $caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 $news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($caps3[0], 'Neu bis Version 0.3.0') !== false && strpos($news, 'Version 0.2.0:') === false, 'Wer 0.2.0 kannte, sieht nur die Neuerungen von 0.3.0');
+pruefe(strpos($caps3[0], 'Neu bis Version 0.4.0') !== false && strpos($news, 'Version 0.2.0:') === false && strpos($news, 'Version 0.3.0:') !== false, 'Wer 0.2.0 kannte, sieht nur die Neuerungen ab 0.3.0');
+
+echo " Formular: Aufbau\n";
+$fa = sbh(35002, 0, ['Transport' => 0]);
+$panelNamen = function (TestSBH $x): array {
+    $r = [];
+    foreach (json_decode($x->GetConfigurationForm(), true)['elements'] as $e) {
+        if (isset($e['name']) && in_array($e['name'], ['PminPanel', 'ContactsPanel', 'EEBusPanel'], true)) { $r[] = $e; }
+    }
+    return $r;
+};
+$namen = function (array $ps) { return array_map(function ($e) { return $e['name']; }, $ps); };
+pruefe($namen($panelNamen($fa)) === ['PminPanel', 'ContactsPanel', 'EEBusPanel'], 'Aufbau: ohne Einstellung Standardreihenfolge');
+$el = json_decode($fa->GetConfigurationForm(), true)['elements'];
+$caps = array_map(function ($e) { return $e['caption'] ?? ''; }, $el);
+$iA = -1; foreach ($caps as $i => $c) { if (strpos($c, 'Formular: Aufbau') !== false) { $iA = $i; } }
+pruefe($iA === count($caps) - 3 && strpos($caps[$iA + 1], 'Rückmeldungen') !== false && ($el[$iA]['expanded'] ?? true) === false, 'Aufbau-Panel: eingeklappt, direkt vor Rückmeldungen und Lizenz');
+pruefe(strpos(json_encode($el[$iA], JSON_UNESCAPED_UNICODE), '"save":true') !== false && count($el[$iA]['items'][2]['values'] ?? $el[$iA]['items'][count($el[$iA]['items']) - 2]['values']) === 3, 'Aufbau-Liste: Schlüssel gespeichert, ein Eintrag je Fachpanel');
+$fa->props['FormLayout'] = json_encode([
+    ['Key' => 'eebus', 'Opened' => true, 'Pos' => 1],
+    ['Key' => 'pmin', 'Closed' => true, 'Pos' => 2],
+    ['Key' => 'contacts', 'Hidden' => true, 'Opened' => true, 'Pos' => 3],
+]);
+$ps = $panelNamen($fa);
+pruefe($namen($ps) === ['EEBusPanel', 'PminPanel', 'ContactsPanel'], 'Aufbau: Position bestimmt die Reihenfolge');
+pruefe(($ps[0]['expanded'] ?? false) === true && ($ps[1]['expanded'] ?? true) === false, 'Aufbau: Aufgeklappt und Zugeklappt wirken');
+pruefe(($ps[2]['visible'] ?? true) === false && count($ps[2]['items']) > 0, 'Aufbau: Ausgeblendet = visible:false, Felder bleiben im Formular');
+$ueberschrift = json_encode(json_decode($fa->GetConfigurationForm(), true)['elements'], JSON_UNESCAPED_UNICODE);
+pruefe(strpos($ueberschrift, 'Formular: Aufbau (1 ausgeblendet)') !== false && strpos($ueberschrift, '🙈 Ausgeblendet: Potentialfreie Kontakte') !== false, 'Aufbau: Überschrift nennt die Zahl, eine Zeile nennt die ausgeblendeten Bereiche');
+$fa->props['FormLayout'] = json_encode([['Key' => 'unbekannt', 'Hidden' => true, 'Pos' => 1], ['Key' => 'pmin', 'Pos' => 99]]);
+pruefe($namen($panelNamen($fa)) === ['ContactsPanel', 'EEBusPanel', 'PminPanel'], 'Aufbau: unbekannter Schlüssel wird ignoriert, fehlende fallen auf Standardposition');
+$fa->props['FormLayout'] = 'kaputt';
+pruefe($namen($panelNamen($fa)) === ['PminPanel', 'ContactsPanel', 'EEBusPanel'], 'Aufbau: ungültige Einstellung fällt auf Standard zurück');
+$fa->props['FormLayout'] = json_encode([['Key' => 'contacts', 'Hidden' => true], ['Key' => 'eebus', 'Closed' => true, 'Opened' => true, 'Hidden' => true]]);
+$ps = $panelNamen($fa);
+pruefe(($ps[1]['visible'] ?? true) === false && ($ps[2]['visible'] ?? true) === false, 'Aufbau: bei Widerspruch gewinnt Ausgeblendet');
+$fa->props['Transport'] = 0;
+$fa->ToggleTransport(0);
+pruefe(($fa->form['ContactsPanel']['visible'] ?? null) === false, 'Aufbau: Umschalten des Transportwegs blendet ein ausgeblendetes Panel nicht wieder ein');
+$txt = $fa->ResetFormLayout();
+$zeilen = json_decode($fa->form['FormLayout']['values'] ?? '[]', true);
+pruefe(count($zeilen) === 3 && !array_filter($zeilen, function ($z) { return $z['Opened'] || $z['Closed'] || $z['Hidden']; }) && array_column($zeilen, 'Key') === ['pmin', 'contacts', 'eebus'] && strpos($txt, 'Übernehmen') !== false, 'Aufbau: Zurücksetzen setzt alles auf Standard und nennt „Übernehmen“');
 
 $txt = $fk->CalculateGZF(4, 0.0);
 pruefe(($fk->form['LoadPMin']['value'] ?? 0) === 13.02 && strpos($txt, '13,02 kW') !== false && strpos($txt, 'Übernehmen') !== false, 'GZF-Rechenhilfe: n = 4 → 13,02 kW, Rückmeldung nennt „Übernehmen“');
