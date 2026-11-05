@@ -2,50 +2,51 @@
   "elements": [
     {
       "type": "ExpansionPanel",
-      "caption": "📖 Dokumentation & Hilfe",
+      "caption": "📖 Documentation & Help",
       "expanded": false,
       "items": [
         {
           "type": "Label",
-          "caption": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs."
+          "caption": "SteuerboxHub only captures the §14a EnWG control signal from the grid operator and publishes it via SBH_GetState. It does not control anything itself; the EMS derives setpoints from it for the device hubs."
         },
         {
           "type": "Label",
-          "caption": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt)."
+          "caption": "Two independent axes: “Load” (limiting controllable consumers such as wallbox, heat pump, storage) and “Feed-in” (reducing PV feed-in; self-consumption and battery charging are not affected)."
         },
         {
           "type": "Label",
-          "caption": "Kontakte-Weg: der Zielwert (loadPMin) kommt NICHT von der Hardware, sondern muss hier konfiguriert werden — bei mehreren steuerbaren Verbrauchern am selben Kontakt mit der Gleichzeitigkeitsfaktor-Rechenhilfe."
+          "caption": "Contacts path: the target value (loadPMin) does NOT come from the hardware and has to be configured here — with the simultaneity factor calculator when several controllable consumers share the same contact."
         },
         {
           "type": "Label",
-          "caption": "Wichtig: SteuerboxHub erkennt keine Hardware automatisch. Die Eingangsvariablen müssen bereits existieren — angelegt von einem separaten IO-/GPIO-Modul oder einem Modbus-Digitalisierer (z. B. ADAM-Modul, Shelly), der den physischen Kontakt der Steuerbox in eine IP-Symcon-Variable überführt. Hier wird nur eine bestehende Variable verknüpft."
+          "caption": "Important: SteuerboxHub does not detect any hardware automatically. The input variables must already exist — created by a separate IO/GPIO module or a Modbus digitizer (e.g. ADAM module, Shelly) that turns the physical contact of the control box into a Symcon variable. Here you only link an existing variable."
         },
         {
           "type": "Label",
-          "caption": "Last- und Einspeiseachse sind unabhängig voneinander optional — es reicht, nur die tatsächlich vorhandene(n) Eingangsvariable(n) zu verknüpfen. Mindestens eine der beiden muss konfiguriert sein."
+          "caption": "The load axis and the feed-in axis are independently optional — it is enough to link only the input variable(s) you actually have. At least one of the two must be configured."
         },
         {
           "type": "Label",
-          "caption": "Einspeiseseite: reale FNN-Steuerboxen melden die Stufen 0/30/60 % oft über drei separate Kontakte (W3/S1/S2) statt eines einzelnen Triggers — beide Varianten sind wählbar."
+          "caption": "Feed-in side: real FNN control boxes often report the 0/30/60 % steps through three separate contacts (W3/S1/S2) instead of a single trigger — both variants can be selected."
         },
         {
           "type": "Label",
-          "caption": "EEBUS-Weg: Das NRG-Stack EEBUS-Gateway (eigenes Modul) hält Zertifikat, Kopplung und Verbindung zur Steuerbox. Daran hängt die „EEBUS-Anbindung“ aus diesem Modul, die SteuerboxHub mit dem Gateway verbindet (Knopf im Abschnitt EEBUS). Die Steuerbox schreibt Grenzen in Watt für Bezug (LPC) und Einspeisung (LPP), auf Wunsch befristet. Fällt ihr Lebenszeichen länger als 120 s aus, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die Mindestdauer (2 bis 24 h) abgelaufen ist."
+          "caption": "EEBUS path: the NRG-Stack EEBUS Gateway (a separate module) holds the certificate, the pairing and the connection to the control box. The “EEBUS connector” from this module, which links SteuerboxHub to the gateway, attaches to it (button in the EEBUS section). The control box writes limits in watts for consumption (LPC) and feed-in (LPP), optionally time-limited. If its heartbeat is missing for more than 120 s, the failsafe limits apply until it sends a new limit or the minimum duration (2 to 24 h) has elapsed."
         }
-      ]
+      ],
+      "name": "DocPanel"
     },
     {
       "type": "Select",
       "name": "Transport",
-      "caption": "Transportweg",
+      "caption": "Transport path",
       "options": [
         {
-          "caption": "Potentialfreie Kontakte (Rundsteuerempfänger-Vierstufenschema, §14a-Variante)",
+          "caption": "Potential-free contacts (ripple control receiver four-step scheme, §14a variant)",
           "value": 0
         },
         {
-          "caption": "EEBUS (Steuerbox über das NRG-Stack EEBUS-Gateway)",
+          "caption": "EEBUS (control box via the NRG-Stack EEBUS Gateway)",
           "value": 1
         }
       ],
@@ -53,37 +54,37 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "Mindestleistung nach §14a (Pmin)",
+      "caption": "Minimum power under §14a (Pmin)",
       "items": [
         {
           "type": "Label",
-          "caption": "Kontakte-Weg: dieser Wert gilt als Bezugsgrenze, solange der Kontakt aktiv ist. EEBUS-Weg: Vorgabe für die Ausfallgrenze Bezug, bis die Steuerbox eine eigene schreibt."
+          "caption": "Contacts path: this value applies as the consumption limit while the contact is active. EEBUS path: default for the failsafe consumption limit until the control box writes its own."
         },
         {
           "type": "ExpansionPanel",
-          "caption": "Rechenhilfe Gleichzeitigkeitsfaktor (BNetzA-Formel)",
+          "caption": "Simultaneity factor calculator (BNetzA formula)",
           "items": [
             {
               "type": "Label",
-              "caption": "Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW — bei mehreren steuerbaren Verbrauchseinrichtungen (z. B. Wallbox, Wärmepumpe, Klimagerät, Speicher mit über 4,2 kW) an diesem Kontakt. Der Gleichzeitigkeitsfaktor wird bei Wert 0 automatisch nach der BNetzA-Tabelle ermittelt (2 Geräte: 0,80 bis ab 9 Geräten: 0,45)."
+              "caption": "Pmin,14a = 4.2 kW + (n-1) × GZF × 4.2 kW — for several controllable consumption devices (e.g. wallbox, heat pump, air conditioner, storage above 4.2 kW) on this contact. If the value is 0, the simultaneity factor (GZF) is determined automatically from the BNetzA table (0.80 for 2 devices, falling to 0.45 from 9 devices)."
             },
             {
               "type": "NumberSpinner",
               "name": "GZFConsumerCount",
-              "caption": "Anzahl steuerbarer Verbraucher (n)",
+              "caption": "Number of controllable consumers (n)",
               "minimum": 1
             },
             {
               "type": "NumberSpinner",
               "name": "GZFFactor",
-              "caption": "Gleichzeitigkeitsfaktor (0 = automatisch nach Tabelle)",
+              "caption": "Simultaneity factor (0 = automatic from table)",
               "digits": 2,
               "minimum": 0,
               "maximum": 1
             },
             {
               "type": "Button",
-              "caption": "Pmin berechnen und übernehmen",
+              "caption": "Calculate and apply Pmin",
               "onClick": "echo SBH_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
             }
           ]
@@ -91,7 +92,7 @@
         {
           "type": "NumberSpinner",
           "name": "LoadPMin",
-          "caption": "Netzwirksamer Leistungsbezug lt. §14a (Pmin)",
+          "caption": "Grid-effective power consumption per §14a (Pmin)",
           "digits": 2,
           "suffix": " kW",
           "minimum": 0
@@ -101,33 +102,33 @@
     },
     {
       "type": "ExpansionPanel",
-      "caption": "Potentialfreie Kontakte",
+      "caption": "Potential-free contacts",
       "items": [
         {
           "type": "Label",
-          "caption": "Klassisches Rundsteuerempfänger-Vierstufenschema (RCR) 0/30/60/100 %, wie es viele Netzbetreiber/Steuerboxen unabhängig vom Hersteller verwenden. Bei der §14a-Variante ersetzt das §14a-Signal die 100-%-Meldung: Kontakt inaktiv = keine Abregelung (100 %), Kontakt aktiv = Lastbegrenzung wirksam. Nur die Eingangsvariable(n) werden hier verknüpft (siehe Hinweis oben) — welches Fabrikat die Steuerbox/der Digitalisierer hat, spielt keine Rolle."
+          "caption": "Classic ripple control receiver (RCR) four-step scheme 0/30/60/100 %, as used by many grid operators and control boxes regardless of manufacturer. In the §14a variant the §14a signal replaces the 100 % message: contact inactive = no curtailment (100 %), contact active = load limit in effect. Only the input variable(s) are linked here (see note above) — the make of the control box or digitizer does not matter."
         },
         {
           "type": "SelectVariable",
           "name": "LoadContactVarID",
-          "caption": "Eingangsvariable Lastbegrenzung aktiv (bool)"
+          "caption": "Input variable: load limit active (bool)"
         },
         {
           "type": "CheckBox",
           "name": "LoadContactInverted",
-          "caption": "Signal invertiert (Ruhekontakt / Öffner)"
+          "caption": "Signal inverted (normally closed contact)"
         },
         {
           "type": "Select",
           "name": "FeedInMode",
-          "caption": "Einspeiseseite: Kontaktschema",
+          "caption": "Feed-in side: contact scheme",
           "options": [
             {
-              "caption": "Einzelkontakt (ein Trigger, Grenze manuell konfiguriert)",
+              "caption": "Single contact (one trigger, limit configured manually)",
               "value": 0
             },
             {
-              "caption": "FNN-Dreistufenschema (drei Kontakte W3/S1/S2, z. B. FNN-Steuerbox)",
+              "caption": "FNN three-step scheme (three contacts W3/S1/S2, e.g. FNN control box)",
               "value": 1
             }
           ],
@@ -136,17 +137,17 @@
         {
           "type": "SelectVariable",
           "name": "FeedInContactVarID",
-          "caption": "Einzelkontakt: Eingangsvariable Einspeisereduktion aktiv (bool)"
+          "caption": "Single contact: input variable for feed-in reduction active (bool)"
         },
         {
           "type": "CheckBox",
           "name": "FeedInContactInverted",
-          "caption": "Einzelkontakt: Signal invertiert (Ruhekontakt / Öffner)"
+          "caption": "Single contact: signal inverted (normally closed contact)"
         },
         {
           "type": "NumberSpinner",
           "name": "FeedInLimitPercent",
-          "caption": "Einzelkontakt: Einspeisegrenze bei aktivem Signal (0 = keine Einspeisung erlaubt, 100 = keine Begrenzung)",
+          "caption": "Single contact: feed-in limit while the signal is active (0 = no feed-in allowed, 100 = no limit)",
           "digits": 0,
           "suffix": " %",
           "minimum": 0,
@@ -154,37 +155,37 @@
         },
         {
           "type": "Label",
-          "caption": "FNN-Dreistufenschema: W3 = 0 % (keine Einspeisung), S1 = 60 %, S2 = 30 %, alle drei offen = 100 % (unbegrenzt). Sind mehrere Kontakte gleichzeitig aktiv, gilt der niedrigste Prozentwert.",
+          "caption": "FNN three-step scheme: W3 = 0 % (no feed-in), S1 = 60 %, S2 = 30 %, all three open = 100 % (unlimited). If several contacts are active at the same time, the lowest percentage applies.",
           "name": "FeedInFNNLabel"
         },
         {
           "type": "SelectVariable",
           "name": "FeedInW3VarID",
-          "caption": "FNN: Eingangsvariable W3 (0 %)"
+          "caption": "FNN: input variable W3 (0 %)"
         },
         {
           "type": "SelectVariable",
           "name": "FeedInS1VarID",
-          "caption": "FNN: Eingangsvariable S1 (60 %)"
+          "caption": "FNN: input variable S1 (60 %)"
         },
         {
           "type": "SelectVariable",
           "name": "FeedInS2VarID",
-          "caption": "FNN: Eingangsvariable S2 (30 %)"
+          "caption": "FNN: input variable S2 (30 %)"
         },
         {
           "type": "CheckBox",
           "name": "FeedInFNNInverted",
-          "caption": "FNN: Signale invertiert (Ruhekontakte / Öffner)"
+          "caption": "FNN: signals inverted (normally closed contacts)"
         },
         {
           "type": "Label",
-          "caption": "Signalverlust-Wächter: warnt, wenn länger als das Intervall kein Update von einer konfigurierten Eingangsvariable kommt. Der zuletzt bekannte Zustand bleibt dabei unverändert bestehen — kein automatischer Rückfall auf „uneingeschränkt”. 0 = Wächter aus."
+          "caption": "Signal loss watchdog: warns if no update arrives from a configured input variable for longer than the interval. The last known state is kept unchanged — there is no automatic fallback to “unrestricted”. 0 = watchdog off."
         },
         {
           "type": "NumberSpinner",
           "name": "WatchdogTimeout",
-          "caption": "Maximal erlaubte Signalpause",
+          "caption": "Maximum allowed signal pause",
           "suffix": " s",
           "minimum": 0
         }
@@ -199,39 +200,39 @@
         {
           "type": "Label",
           "name": "EEBusConnectionLine",
-          "caption": "(wird beim Öffnen berechnet)"
+          "caption": "(calculated when the form is opened)"
         },
         {
           "type": "Label",
           "name": "EEBusStateLine",
-          "caption": "(wird beim Öffnen berechnet)"
+          "caption": "(calculated when the form is opened)"
         },
         {
           "type": "Label",
           "name": "EEBusFailsafeLine",
-          "caption": "(wird beim Öffnen berechnet)"
+          "caption": "(calculated when the form is opened)"
         },
         {
           "type": "SelectInstance",
           "name": "EEBusBridgeID",
-          "caption": "EEBUS-Anbindung (leer = automatisch, wenn es genau eine gibt)",
+          "caption": "EEBUS connector (empty = automatic if there is exactly one)",
           "validModules": [
             "{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}"
           ]
         },
         {
           "type": "Button",
-          "caption": "EEBUS-Anbindung anlegen",
+          "caption": "Create EEBUS connector",
           "onClick": "echo SBH_CreateEEBusBridge($id);"
         },
         {
           "type": "Label",
-          "caption": "Nennwerte der gesteuerten Anlage, die die Steuerbox abfragt (0 = nicht angegeben)."
+          "caption": "Rated values of the controlled installation that the control box queries (0 = not specified)."
         },
         {
           "type": "NumberSpinner",
           "name": "EEBusConsumptionNominalKw",
-          "caption": "Höchste Bezugsleistung der gesteuerten Verbraucher",
+          "caption": "Maximum power consumption of the controlled consumers",
           "digits": 2,
           "suffix": " kW",
           "minimum": 0
@@ -239,12 +240,12 @@
         {
           "type": "Label",
           "name": "EEBusProductionNominalLine",
-          "caption": "(wird beim Öffnen berechnet)"
+          "caption": "(calculated when the form is opened)"
         },
         {
           "type": "NumberSpinner",
           "name": "EEBusProductionNominalKw",
-          "caption": "Installierte PV-Leistung",
+          "caption": "Installed PV capacity",
           "digits": 2,
           "suffix": " kWp",
           "minimum": 0
@@ -252,7 +253,7 @@
         {
           "type": "NumberSpinner",
           "name": "EEBusFailsafeProductionKw",
-          "caption": "Vorgabe Ausfallgrenze Einspeisung (0 = keine Vorgabe, im Ausfall unbegrenzt)",
+          "caption": "Default failsafe feed-in limit (0 = no default, unlimited during a failure)",
           "digits": 2,
           "suffix": " kW",
           "minimum": 0
@@ -261,8 +262,8 @@
     },
     {
       "type": "Button",
-      "caption": "🔄 Übernehmen erzwingen (ohne Formularänderung)",
-      "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() ausgeführt.';"
+      "caption": "🔄 Force apply (without form changes)",
+      "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() executed.';"
     }
   ],
   "actions": [],
@@ -270,37 +271,37 @@
     {
       "code": 102,
       "icon": "active",
-      "caption": "Aktiv."
+      "caption": "Active."
     },
     {
       "code": 104,
       "icon": "inactive",
-      "caption": "Noch nicht konfiguriert: keine Eingangsvariable gewählt bzw. kein EEBUS-Gateway zugeordnet."
+      "caption": "Not configured yet: no input variable selected or no EEBUS gateway assigned."
     },
     {
       "code": 202,
       "icon": "error",
-      "caption": "Eine gewählte Eingangsvariable existiert nicht mehr."
+      "caption": "A selected input variable no longer exists."
     },
     {
       "code": 203,
       "icon": "error",
-      "caption": "EEBUS: Anmeldung beim Gateway fehlgeschlagen (Meldungen prüfen)."
+      "caption": "EEBUS: registration with the gateway failed (check the messages)."
     },
     {
       "code": 204,
       "icon": "error",
-      "caption": "EEBUS: Steuerbox nicht erreichbar – Ausfallgrenze gilt bzw. galt (Details im Formular)."
+      "caption": "EEBUS: control box unreachable – failsafe limit applies or applied (details in the form)."
     },
     {
       "code": 205,
       "icon": "error",
-      "caption": "Signalverlust: länger kein Update von der Eingangsvariable — letzter bekannter Zustand bleibt bestehen."
+      "caption": "Signal lost: no update from the input variable for too long — the last known state is kept."
     },
     {
       "code": 210,
       "icon": "inactive",
-      "caption": "EEBUS: wartet auf die erste Verbindung zur Steuerbox (Kopplung im Gateway prüfen)."
+      "caption": "EEBUS: waiting for the first connection to the control box (check the pairing in the gateway)."
     }
   ]
 }

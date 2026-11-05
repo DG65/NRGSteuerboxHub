@@ -3,6 +3,21 @@
 Alle nennenswerten Änderungen an diesem Modul werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
+## [0.5.0] - 2026-11-05
+
+### Added
+- Zweisprachig Deutsch/Englisch (NRG-Stack-Konvention): Formular, Meldungen, Protokoll und
+  Statuszeilen folgen der Symcon-Sprache. Quelltext ist Englisch, die deutschen Texte stehen in
+  `locale.json` (SteuerboxHub und EEBUS-Anbindung). Zahlen (Dezimalpunkt/-komma) und Zeitpunkte
+  (JJJJ-MM-TT/TT.MM.JJJJ) richten sich nach der Sprache. `README.en.md`.
+- Prüfstand: jeder Text steht in `locale.json`, kein deutscher Text im Code, Formular wird in
+  beiden Sprachen erzeugt und geprüft, Timerlauf ohne `Translate()`-Aufrufe.
+
+### Changed
+- Wortlaut „IP-Symcon“ → „Symcon“ im Formular. Das Doku-Panel wird über seinen Namen gefunden,
+  nicht mehr über das Wort „Dokumentation“.
+- Kennungen, Properties, Funktionsnamen und `SBH_GetState` sind unverändert.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added

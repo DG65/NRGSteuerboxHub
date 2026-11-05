@@ -106,6 +106,29 @@ function IPS_GetLibrary(string $guid): array
 /** Gemeinsame Symcon-Attrappe für SteuerboxHub und (Teil 2) das echte Gateway. */
 class IPSModule
 {
+    /** Symcon-Sprache im Prüfstand: 'de' (Standard) oder 'en' (Quelltext bleibt unübersetzt). */
+    public static $locale = 'de';
+    public static $translateCalls = 0;
+    private static $translations = [];
+
+    /** Wie Symcon: Quelltext (Englisch) → Übersetzung aus locale.json des Moduls; unbekannt = unverändert. */
+    public function Translate(string $text): string
+    {
+        self::$translateCalls++;
+        if (self::$locale === 'en') {
+            return $text;
+        }
+        $c = new ReflectionClass($this);
+        while ($c->getParentClass() && $c->getParentClass()->getName() !== 'IPSModule') {
+            $c = $c->getParentClass();
+        }
+        $file = dirname($c->getFileName()) . '/locale.json';
+        if (!isset(self::$translations[$file])) {
+            self::$translations[$file] = is_file($file) ? (json_decode(file_get_contents($file), true)['translations'][self::$locale] ?? []) : [];
+        }
+        return self::$translations[$file][$text] ?? $text;
+    }
+
     public $InstanceID;
     public $props = [];
     public $attrs = [];
@@ -463,6 +486,84 @@ pruefe(($sb->form['ContactsPanel']['visible'] ?? null) === true && ($sb->form['E
 $codes = array_column(json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/form.json'), true)['status'], 'code');
 pruefe(!array_diff([102, 104, 202, 203, 204, 205, 210], $codes), 'Jeder Statuscode hat einen Eintrag in form.json');
 
+echo " Zweisprachigkeit (Deutsch/Englisch)\n";
+$deutsch = '/[äöüÄÖÜß]|\b(und|nicht|ist|wird|bei|mit|von|für|keine?|Steuerbox|Anbindung|Ausfall\w*|Grenze|Bezug|Einspeisung\w*|Formular|Verbunden|Zustand|Gleichzeitigkeit\w*)\b/u';
+$neutral = function (string $t): bool {
+    return !preg_match('/\p{L}{3}/u', $t) || preg_match('~^(https?://|echo |/)~', $t) || strpos($t, 'ℹ️ SteuerboxHub') === 0 || in_array($t, ['EEBUS', 'Position', 'SteuerboxHub'], true);
+};
+$sammle = function ($node) use (&$sammle): array {
+    $out = [];
+    foreach ((array) $node as $k => $v) {
+        if (is_array($v)) { $out = array_merge($out, $sammle($v)); }
+        elseif ($k === 'caption' && is_string($v) && $v !== '') { $out[] = $v; }
+        elseif ($k === 'onClick' && is_string($v) && preg_match_all("/echo '([^']*)';/u", $v, $m)) { $out = array_merge($out, $m[1]); }
+    }
+    return $out;
+};
+$brueckeInst = $GLOBALS['INST'][B(31001)];
+IPSModule::$locale = 'en';
+$enTexte  = array_merge($sammle(json_decode($sb->GetConfigurationForm(), true)), $sammle(json_decode($brueckeInst->GetConfigurationForm(), true)));
+$enRueck  = $sb->CalculateGZF(4, 0.0);
+$enReset  = $sb->ResetFormLayout();
+$sb->log  = [];
+$gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 5000, 'scale' => 0]]]));
+$enLog    = implode(' | ', $sb->log);
+$enForm   = json_encode(json_decode($sb->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
+$zeit     = new ReflectionMethod($sb, 'dt');
+$zahl     = new ReflectionMethod($sb, 'fmt');
+$enZeit   = $zeit->invoke($sb, mktime(14, 30, 0, 11, 5, 2026));
+$enZahl   = $zahl->invoke($sb, 4.2);
+IPSModule::$locale = 'de';
+$deTexte  = array_merge($sammle(json_decode($sb->GetConfigurationForm(), true)), $sammle(json_decode($brueckeInst->GetConfigurationForm(), true)));
+$deZeit   = $zeit->invoke($sb, mktime(14, 30, 0, 11, 5, 2026));
+$deZahl   = $zahl->invoke($sb, 4.2);
+
+$deutschImEn = array_values(array_filter($enTexte, function ($t) use ($deutsch, $neutral) { return !$neutral($t) && preg_match($deutsch, $t); }));
+pruefe($deutschImEn === [], 'Englisches Formular (SteuerboxHub und Anbindung): kein deutscher Text' . ($deutschImEn ? ' — gefunden: ' . mb_substr($deutschImEn[0], 0, 70) : ''));
+pruefe(strpos(implode('|', $enTexte), '📖 Documentation & Help') !== false && strpos(implode('|', $enTexte), 'Potential-free contacts') !== false, 'Englisches Formular: Dokumentations- und Kontakte-Panel englisch');
+$unuebersetzt = array_values(array_filter(array_unique($enTexte), function ($t) use ($deTexte, $neutral) { return !$neutral($t) && in_array($t, $deTexte, true) && preg_match('/\p{L}+\s+\p{L}+\s+\p{L}+/u', $t); }));
+pruefe($unuebersetzt === [], 'Deutsches Formular: jeder englische Quelltext ist übersetzt' . ($unuebersetzt ? ' — fehlt: ' . mb_substr($unuebersetzt[0], 0, 70) : ''));
+pruefe(strpos($enForm, '✅ Connected via connector #') !== false && strpos($enForm, 'Failsafe') === false || strpos($enForm, 'Controlled by the control box') !== false, 'Englisches Formular: Statuszeilen englisch (Verbindung, Zustand)');
+pruefe(strpos($enRueck, '13.02 kW') !== false && strpos($enRueck, 'simultaneity factor') !== false && strpos($enRueck, 'Apply Changes') !== false && !preg_match($deutsch, $enRueck), 'Englisch: GZF-Rückmeldung mit Dezimalpunkt und „Apply Changes“');
+pruefe(strpos($enReset, 'Apply Changes') !== false && !preg_match($deutsch, $enReset), 'Englisch: Rückmeldung „Reset to default“');
+pruefe($enLog !== '' && strpos($enLog, 'EEBUS: consumption limit 5 kW active') !== false && !preg_match($deutsch, $enLog), 'Englisch: Protokollmeldungen englisch (Bezugsgrenze 5 kW)');
+pruefe($enZahl === '4.2' && $deZahl === '4,2', 'Zahlen: Dezimalpunkt auf Englisch, Komma auf Deutsch');
+pruefe(preg_match('/^\d{4}-\d{2}-\d{2} 14:30$/', $enZeit) === 1 && $deZeit === '05.11.2026 14:30', 'Zeitpunkt: JJJJ-MM-TT auf Englisch, TT.MM.JJJJ auf Deutsch');
+
+// Statisch: jeder Text im Code und in form.json steht in locale.json, kein deutscher Text mehr im Code.
+$wurzel = dirname(__DIR__);
+$fehlt = [];
+$deutschCode = [];
+foreach (['SteuerboxHub', 'SteuerboxHubEEBUS'] as $mod) {
+    $locDe = json_decode(file_get_contents("$wurzel/$mod/locale.json"), true)['translations']['de'] ?? [];
+    foreach (token_get_all(file_get_contents("$wurzel/$mod/module.php")) as $t) {
+        if (is_array($t) && $t[0] === T_CONSTANT_ENCAPSED_STRING) {
+            $str = stripcslashes(substr($t[1], 1, -1));
+            if ($neutral($str) || !preg_match('/\p{L}.*\s.*\p{L}|[•✅⚠ℹ⛔🆕👋💬🧪🧡☕🪟🙈↩✏🔄]/u', $str)) { continue; }
+            if (preg_match($deutsch, $str)) { $deutschCode[] = "$mod: " . mb_substr($str, 0, 50); }
+            if (!isset($locDe[$str]) && !preg_match('/^(type|name|caption)\b/', $str)) { $fehlt[] = "$mod: " . mb_substr($str, 0, 50); }
+        }
+    }
+    $formFile = "$wurzel/$mod/form.json";
+    if (is_file($formFile)) {
+        foreach ($sammle(json_decode(file_get_contents($formFile), true)) as $str) {
+            if (!$neutral($str) && !isset($locDe[$str])) { $fehlt[] = "$mod form.json: " . mb_substr($str, 0, 50); }
+            if (!$neutral($str) && preg_match($deutsch, $str)) { $deutschCode[] = "$mod form.json: " . mb_substr($str, 0, 50); }
+        }
+    }
+}
+pruefe($deutschCode === [], 'Statisch: kein deutscher Text mehr im Code und in form.json' . ($deutschCode ? ' — ' . $deutschCode[0] : ''));
+pruefe($fehlt === [], 'Statisch: jeder Text im Code und in form.json steht in locale.json' . ($fehlt ? ' — fehlt: ' . $fehlt[0] : ''));
+$locAlle = json_decode(file_get_contents("$wurzel/SteuerboxHub/locale.json"), true)['translations'];
+pruefe(array_keys($locAlle) === ['de'] && count(array_unique(array_values($locAlle['de']))) <= count($locAlle['de']), 'locale.json: Quelltext Englisch, Übersetzung Deutsch');
+$ohneKopie = array_filter($locAlle['de'], function ($de, $en) { return $de === $en && mb_strlen($en) > 20; }, ARRAY_FILTER_USE_BOTH);
+pruefe($ohneKopie === [], 'locale.json: keine unübersetzten Einträge (Deutsch gleich Englisch)');
+
+// Stolperstein 24: der 10-s-Timer ruft kein Translate() auf.
+IPSModule::$translateCalls = 0;
+$sb->CheckEEBus();
+pruefe(IPSModule::$translateCalls <= 2, 'Timerlauf CheckEEBus: höchstens 2 Translate()-Aufrufe (gemessen: ' . IPSModule::$translateCalls . ')');
+
 echo " Brücke (EEBUS-Anbindung)\n";
 pruefe($GLOBALS['INST'][B(31001)]->status === 102, 'Brücke am Gateway: Status 102');
 $lose = new TestBridge(36000);
@@ -515,11 +616,11 @@ $caps = array_map(function ($e) { return $e['caption'] ?? ($e['name'] ?? $e['typ
 $idx = function (string $needle) use ($caps) { foreach ($caps as $i => $c) { if (strpos((string) $c, $needle) !== false) { return $i; } } return -1; };
 pruefe($idx('Wozu dieses Modul') === 0 && $idx('Neu bis Version') === 1 && $idx('Dokumentation') === 2, 'Reihenfolge: Wozu → Neu bis Version → Dokumentation & Hilfe');
 pruefe($idx('Rückmeldungen') === count($caps) - 2 && $idx('Über dieses Modul') === count($caps) - 1, 'Rückmeldungen und „Über dieses Modul“ am Ende');
-pruefe(strpos($caps[1], '0.4.0') !== false, 'News-Panel nennt die höchste neue Version (0.4.0)');
+pruefe(strpos($caps[1], '0.5.0') !== false, 'News-Panel nennt die höchste neue Version (0.5.0)');
 $lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
 $doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($doc, 'SteuerboxHub Version 0.4.0 (Build 6)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+pruefe(strpos($doc, 'SteuerboxHub Version 0.5.0 (Build 7)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
 $fh = json_encode($form['elements'][count($caps) - 2], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($fh, "echo 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795'") !== false && strpos($fh, 'Zum Forums-Thread') < strpos($fh, 'GitHub'), 'Rückmeldungen: Forums-Thread zuerst, GitHub-Issues als zweiter Knopf');
 $fk->AckPurposeIntro();
@@ -527,11 +628,11 @@ $fk->AckNews();
 $fk->AckForumHint();
 $caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
-pruefe($fk->attrs['SeenNews'] === '0.4.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.4.0) und blendet sofort aus');
+pruefe($fk->attrs['SeenNews'] === '0.5.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.5.0) und blendet sofort aus');
 $fk->attrs['SeenNews'] = '0.2.0';
 $caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 $news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($caps3[0], 'Neu bis Version 0.4.0') !== false && strpos($news, 'Version 0.2.0:') === false && strpos($news, 'Version 0.3.0:') !== false, 'Wer 0.2.0 kannte, sieht nur die Neuerungen ab 0.3.0');
+pruefe(strpos($caps3[0], 'Neu bis Version 0.5.0') !== false && strpos($news, 'Version 0.2.0:') === false && strpos($news, 'Version 0.3.0:') !== false, 'Wer 0.2.0 kannte, sieht nur die Neuerungen ab 0.3.0');
 
 echo " Formular: Aufbau\n";
 $fa = sbh(35002, 0, ['Transport' => 0]);

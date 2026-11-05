@@ -236,17 +236,20 @@ class SteuerboxHub extends IPSModule
     // 5. „Über dieses Modul“ (eingeklappt, nicht ausblendbar)
     private const NEWS_VERSIONS = [
         '0.2.0' => [
-            '• Neuer Transportweg EEBUS: SteuerboxHub hängt als Kind-Instanz am NRG-Stack EEBUS-Gateway und nimmt Grenzen der Steuerbox für Bezug (LPC) und Einspeisung (LPP) entgegen, auch befristet.',
-            '• Fällt die Steuerbox länger als 120 s aus, gelten die Ausfallgrenzen, bis sie einen neuen Grenzwert schickt oder die Mindestdauer abgelaufen ist.',
-            '• Pmin nach §14a mit Rechenhilfe steht jetzt in einem eigenen Abschnitt und gilt für beide Wege.',
+            '• New transport path EEBUS: SteuerboxHub attaches as a child instance to the NRG-Stack EEBUS Gateway and receives the control box limits for consumption (LPC) and feed-in (LPP), including time-limited ones.',
+            '• If the control box fails for more than 120 s, the failsafe limits apply until it sends a new limit or the minimum duration has elapsed.',
+            '• Pmin under §14a, with a calculator, now has its own section and applies to both paths.',
         ],
         '0.3.0' => [
-            '• 👋 Neue Zweck-Einführung ganz oben im Formular, dazu Rückmeldungs- und Lizenzhinweis.',
-            '• EEBUS: Die Einspeisegrenze wird auf die installierte PV-Leistung (kWp) bezogen, dieselbe Größe, mit der das EMS rechnet.',
-            '• EEBUS: Ans Gateway hängt jetzt die eigene Instanz „NRG-Stack SteuerboxHub EEBUS-Anbindung“, nicht mehr SteuerboxHub selbst. Damit verschwindet auf dem Kontakte-Weg der Hinweis „benötigt eine übergeordnete Instanz“. Anlegen per Knopf im Abschnitt EEBUS.',
+            '• 👋 New purpose introduction at the top of the form, plus feedback and license notes.',
+            '• EEBUS: the feed-in limit is related to the installed PV capacity (kWp), the same value the EMS calculates with.',
+            '• EEBUS: the gateway now has its own instance, “NRG-Stack SteuerboxHub EEBUS Connector”, attached instead of SteuerboxHub itself. This removes the “requires a parent instance” message on the contacts path. Create it with the button in the EEBUS section.',
         ],
         '0.4.0' => [
-            '• 🪟 Neu: Formular-Aufbau selbst wählen. Im Abschnitt „Formular: Aufbau“ (unten) legst du je Bereich fest, ob er beim Öffnen aufgeklappt, zugeklappt oder ausgeblendet ist und an welcher Stelle er steht.',
+            '• 🪟 New: choose the form layout yourself. In the “Form layout” section (below) you decide for each area whether it is expanded, collapsed or hidden when opened, and where it appears.',
+        ],
+        '0.5.0' => [
+            '• 🌐 New: SteuerboxHub is now also available in English (form, messages, documentation). The language follows the Symcon setting.',
         ],
     ];
     private const LIBRARY_GUID = '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}';
@@ -298,7 +301,28 @@ class SteuerboxHub extends IPSModule
             $tail,
             [$this->formLayoutPanel($layout), $this->formForumHint(), $this->formLicenseHint()]
         )));
+        $this->translateForm($form);
         return json_encode($form);
+    }
+
+    /**
+     * Übersetzt alle Anzeigetexte des fertig zusammengesetzten Formulars. Quelltext ist Englisch,
+     * die deutschen Texte stehen in locale.json; unbekannte Texte (z. B. schon gefüllte Statuszeilen) bleiben unverändert.
+     */
+    private function translateForm(array &$node): void
+    {
+        foreach ($node as $key => &$value) {
+            if (is_array($value)) {
+                $this->translateForm($value);
+            } elseif (is_string($value) && $value !== '' && $key === 'caption') {
+                $value = $this->Translate($value);
+            } elseif (is_string($value) && $key === 'onClick') {
+                $value = (string) preg_replace_callback("/echo '([^']*)';/u", function (array $m): string {
+                    return "echo '" . $this->Translate($m[1]) . "';";
+                }, $value);
+            }
+        }
+        unset($value);
     }
 
     public function AckPurposeIntro()
@@ -338,11 +362,11 @@ class SteuerboxHub extends IPSModule
         }
         return [
             'type' => 'ExpansionPanel', 'name' => 'PurposeIntroPanel', 'expanded' => true,
-            'caption' => '👋  Wozu dieses Modul?',
+            'caption' => '👋  What is this module for?',
             'items' => [
-                ['type' => 'Label', 'caption' => 'SteuerboxHub nimmt die Leistungsbegrenzung des Netzbetreibers nach §14a EnWG entgegen: über die Kontakte einer Steuerbox oder eines Rundsteuerempfängers oder über EEBUS. Es meldet, ob und wie stark Bezug und Einspeisung gerade begrenzt sind, mit Zeitpunkt.'],
-                ['type' => 'Label', 'caption' => 'Es regelt selbst nichts. Umsetzen muss die Grenze ein Energiemanagement, z. B. das NRG-Stack EMS (Wallboxen, Wechselrichter), oder ein eigenes Skript über SBH_GetState. Für EEBUS werden zusätzlich das NRG-Stack EEBUS-Gateway und die EEBUS-Anbindung aus diesem Modul gebraucht.'],
-                ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckPurposeIntro($id);'],
+                ['type' => 'Label', 'caption' => 'SteuerboxHub receives the power limit set by the grid operator under §14a EnWG: via the contacts of a control box or ripple control receiver, or via EEBUS. It reports whether and how strongly consumption and feed-in are currently limited, with the time.'],
+                ['type' => 'Label', 'caption' => 'It does not control anything itself. An energy management system has to enforce the limit, e.g. the NRG-Stack EMS (wallboxes, inverters), or your own script via SBH_GetState. EEBUS additionally requires the NRG-Stack EEBUS Gateway and the EEBUS connector from this module.'],
+                ['type' => 'Button', 'caption' => 'Got it – do not show again', 'onClick' => 'SBH_AckPurposeIntro($id);'],
             ],
         ];
     }
@@ -362,16 +386,16 @@ class SteuerboxHub extends IPSModule
         uksort($pending, 'version_compare');
         $items = [];
         foreach ($pending as $version => $lines) {
-            $items[] = ['type' => 'Label', 'caption' => 'Version ' . $version . ':'];
+            $items[] = ['type' => 'Label', 'caption' => sprintf($this->Translate('Version %s:'), $version)];
             foreach ($lines as $line) {
                 $items[] = ['type' => 'Label', 'caption' => $line];
             }
         }
-        $items[] = ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckNews($id);'];
+        $items[] = ['type' => 'Button', 'caption' => 'Got it – do not show again', 'onClick' => 'SBH_AckNews($id);'];
         $keys = array_keys($pending);
         return [
             'type' => 'ExpansionPanel', 'name' => 'NewsPanel', 'expanded' => true,
-            'caption' => '🆕  Neu bis Version ' . end($keys),
+            'caption' => sprintf($this->Translate('🆕  New up to version %s'), end($keys)),
             'items' => $items,
         ];
     }
@@ -383,12 +407,12 @@ class SteuerboxHub extends IPSModule
         }
         return [
             'type' => 'ExpansionPanel', 'name' => 'ForumHintPanel', 'expanded' => true,
-            'caption' => '💬  Rückmeldungen',
+            'caption' => '💬  Feedback',
             'items' => [
-                ['type' => 'Label', 'caption' => '🧪 Welche Steuerbox bzw. welcher Rundsteuerempfänger ist bei dir verbaut, und kommt das Signal richtig an? Rückmeldungen mit Hersteller, Modell und Netzbetreiber helfen sehr, gerade beim EEBUS-Weg.'],
-                ['type' => 'Button', 'caption' => 'Zum Forums-Thread', 'onClick' => "echo '" . self::FORUM_URL . "';", 'link' => true],
-                ['type' => 'Button', 'caption' => 'Fehler auf GitHub melden', 'onClick' => "echo '" . self::ISSUES_URL . "';", 'link' => true],
-                ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => 'SBH_AckForumHint($id);'],
+                ['type' => 'Label', 'caption' => '🧪 Which control box or ripple control receiver do you have installed, and does the signal arrive correctly? Feedback with manufacturer, model and grid operator helps a lot, especially on the EEBUS path.'],
+                ['type' => 'Button', 'caption' => 'Go to the forum thread', 'onClick' => "echo '" . self::FORUM_URL . "';", 'link' => true],
+                ['type' => 'Button', 'caption' => 'Report a bug on GitHub', 'onClick' => "echo '" . self::ISSUES_URL . "';", 'link' => true],
+                ['type' => 'Button', 'caption' => 'Got it – do not show again', 'onClick' => 'SBH_AckForumHint($id);'],
             ],
         ];
     }
@@ -398,14 +422,14 @@ class SteuerboxHub extends IPSModule
     {
         return [
             'type' => 'ExpansionPanel', 'expanded' => false,
-            'caption' => '🧡  Über dieses Modul',
+            'caption' => '🧡  About this module',
             'items' => [
-                ['type' => 'Label', 'caption' => 'Entstanden aus echter Begeisterung für die eigene Anlage — und ein paar durchgetippten Abenden. Trotzdem: Software-Hobby hin oder her, das hier ist geistiges Eigentum und echte Arbeit steckt drin.'],
-                ['type' => 'Label', 'caption' => 'Lizenz: PolyForm Noncommercial 1.0.0 — privat und nicht-kommerziell frei nutzbar, für den gewerblichen Einsatz braucht es eine gesonderte Lizenz vom Rechteinhaber.'],
-                ['type' => 'Button', 'caption' => 'Lizenztext ansehen', 'onClick' => "echo '" . self::LICENSE_URL . "';", 'link' => true],
-                ['type' => 'Label', 'caption' => 'Gewerbliche Nutzung oder Fragen zur Lizenz? Einfach melden: dietmar@gureth.eu'],
-                ['type' => 'Label', 'caption' => 'Gefällt dir das Modul und du möchtest trotzdem etwas dalassen? Über eine kleine Spende freue ich mich — völlig freiwillig, keine Gegenleistung nötig.'],
-                ['type' => 'Button', 'caption' => '☕  Spenden via PayPal', 'onClick' => "echo '" . self::PAYPAL_URL . "';", 'link' => true],
+                ['type' => 'Label', 'caption' => 'Born out of genuine enthusiasm for my own system — and a few evenings spent at the keyboard. Still: hobby or not, this is intellectual property and real work went into it.'],
+                ['type' => 'Label', 'caption' => 'License: PolyForm Noncommercial 1.0.0 — free for private and non-commercial use; commercial use requires a separate license from the rights holder.'],
+                ['type' => 'Button', 'caption' => 'View license text', 'onClick' => "echo '" . self::LICENSE_URL . "';", 'link' => true],
+                ['type' => 'Label', 'caption' => 'Commercial use or questions about the license? Just get in touch: dietmar@gureth.eu'],
+                ['type' => 'Label', 'caption' => 'Do you like the module and want to give something back? I would be happy about a small donation — entirely voluntary, nothing expected in return.'],
+                ['type' => 'Button', 'caption' => '☕  Donate via PayPal', 'onClick' => "echo '" . self::PAYPAL_URL . "';", 'link' => true],
             ],
         ];
     }
@@ -442,7 +466,7 @@ class SteuerboxHub extends IPSModule
 
     // „Formular: Aufbau“ (SUITE.md Einheitliche Formular-Optik 3a): wählbare Fachpanels, Schlüssel je Panel-Name.
     private const FORM_PANELS = ['PminPanel' => 'pmin', 'ContactsPanel' => 'contacts', 'EEBusPanel' => 'eebus'];
-    private const FORM_PANEL_LABELS = ['pmin' => 'Mindestleistung nach §14a', 'contacts' => 'Potentialfreie Kontakte', 'eebus' => 'EEBUS'];
+    private const FORM_PANEL_LABELS = ['pmin' => 'Minimum power under §14a', 'contacts' => 'Potential-free contacts', 'eebus' => 'EEBUS'];
 
     /**
      * Reihenfolge und Aufklapp-Zustand der Fachpanels aus der Einstellung „FormLayout“.
@@ -480,7 +504,7 @@ class SteuerboxHub extends IPSModule
         $rows   = [];
         $hidden = [];
         foreach ($layout as $key => $l) {
-            $name   = self::FORM_PANEL_LABELS[$key] ?? $key;
+            $name   = $this->Translate(self::FORM_PANEL_LABELS[$key] ?? $key);
             $rows[] = ['Key' => $key, 'Panel' => $name, 'Opened' => $l['open'] === 'open', 'Closed' => $l['open'] === 'closed',
                 'Hidden' => $l['open'] === 'hidden', 'Pos' => $l['pos']];
             if ($l['open'] === 'hidden') {
@@ -488,28 +512,28 @@ class SteuerboxHub extends IPSModule
             }
         }
         $hiddenLine = $hidden
-            ? [['type' => 'Label', 'caption' => '🙈 Ausgeblendet: ' . implode(', ', $hidden) . ' — zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen. Ausgeblendete Bereiche arbeiten weiter, nur die Anzeige fehlt.']]
+            ? [['type' => 'Label', 'caption' => sprintf($this->Translate('🙈 Hidden: %s — to show them again, clear the “Hidden” checkbox. Hidden areas keep working, only the display is missing.'), implode(', ', $hidden))]]
             : [];
         return [
             'type' => 'ExpansionPanel', 'expanded' => false, 'name' => 'LayoutPanel',
-            'caption' => '🪟  Formular: Aufbau' . ($hidden ? ' (' . count($hidden) . ' ausgeblendet)' : ''),
+            'caption' => $hidden ? sprintf($this->Translate('🪟  Form layout (%d hidden)'), count($hidden)) : $this->Translate('🪟  Form layout'),
             'items' => array_merge($hiddenLine, [
-                ['type' => 'Label', 'caption' => 'Hier legst du fest, welche Bereiche beim Öffnen des Formulars aufgeklappt sind und in welcher Reihenfolge sie stehen. Symcon merkt sich das Auf- und Zuklappen nicht selbst, deshalb gilt die Einstellung hier jedes Mal beim Öffnen. Sie wirkt nach „Übernehmen“ beim nächsten Öffnen des Formulars.'],
-                ['type' => 'Label', 'caption' => 'Kein Haken heißt „Standard“: wie das Modul es vorsieht. Die Position ist eine Zahl; bei gleicher Zahl bleibt die Standardreihenfolge. „Ausgeblendet“ nimmt einen Bereich aus der Anzeige, ohne dass er etwas verliert: seine Einstellungen bleiben erhalten und wirken weiter. Zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen oder „Auf Standard zurücksetzen“ klicken. Sind mehrere Haken gesetzt, gilt „Ausgeblendet“ vor „Zugeklappt“ vor „Aufgeklappt“. Die Bereiche oben (Zweck, Neu, Dokumentation), die Wahl des Transportwegs und unten (Rückmeldungen, Über dieses Modul) bleiben, wo sie sind und lassen sich nicht ausblenden.'],
+                ['type' => 'Label', 'caption' => 'Here you decide which areas are expanded when the form opens and in which order they appear. Symcon does not remember expanding and collapsing by itself, so this setting applies every time the form is opened. It takes effect after “Apply Changes”, the next time the form is opened.'],
+                ['type' => 'Label', 'caption' => 'No checkbox set means “default”: as the module intends it. The position is a number; with equal numbers the default order is kept. “Hidden” removes an area from the display without losing anything: its settings are kept and stay in effect. To show it again, clear the “Hidden” checkbox or click “Reset to default”. If several checkboxes are set, “Hidden” beats “Collapsed” beats “Expanded”. The areas at the top (purpose, news, documentation), the choice of the transport path, and the areas at the bottom (feedback, about this module) stay where they are and cannot be hidden.'],
                 [
-                    'type' => 'List', 'name' => 'FormLayout', 'caption' => 'Bereiche', 'rowCount' => count($rows), 'add' => false, 'delete' => false,
+                    'type' => 'List', 'name' => 'FormLayout', 'caption' => 'Areas', 'rowCount' => count($rows), 'add' => false, 'delete' => false,
                     'loadValuesFromConfiguration' => false,
                     'values' => $rows,
                     'columns' => [
-                        ['caption' => 'Bereich', 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
-                        ['caption' => 'Schlüssel', 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
-                        ['caption' => 'Aufgeklappt', 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => 'Zugeklappt', 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => '🙈 Ausgeblendet', 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => 'Area', 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
+                        ['caption' => 'Key', 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
+                        ['caption' => 'Expanded', 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => 'Collapsed', 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => '🙈 Hidden', 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
                         ['caption' => 'Position', 'name' => 'Pos', 'width' => '100px', 'add' => 1, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 1, 'maximum' => 99]],
                     ],
                 ],
-                ['type' => 'Button', 'caption' => '↩️ Auf Standard zurücksetzen', 'onClick' => 'echo SBH_ResetFormLayout($id);'],
+                ['type' => 'Button', 'caption' => '↩️ Reset to default', 'onClick' => 'echo SBH_ResetFormLayout($id);'],
             ]),
         ];
     }
@@ -519,10 +543,10 @@ class SteuerboxHub extends IPSModule
     {
         $rows = [];
         foreach (array_values(self::FORM_PANELS) as $i => $key) {
-            $rows[] = ['Key' => $key, 'Panel' => self::FORM_PANEL_LABELS[$key], 'Opened' => false, 'Closed' => false, 'Hidden' => false, 'Pos' => $i + 1];
+            $rows[] = ['Key' => $key, 'Panel' => $this->Translate(self::FORM_PANEL_LABELS[$key]), 'Opened' => false, 'Closed' => false, 'Hidden' => false, 'Pos' => $i + 1];
         }
         $this->UpdateFormField('FormLayout', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
-        return 'ℹ️ Auf Standard gesetzt. Zum Speichern unten „Übernehmen“ klicken.';
+        return $this->Translate('ℹ️ Reset to default. Click “Apply Changes” below to save.');
     }
 
     /** Ob das Fachpanel im Formular-Aufbau ausgeblendet ist (dann darf die Transportwahl es nicht live einblenden). */
@@ -566,7 +590,7 @@ class SteuerboxHub extends IPSModule
             ? 'ℹ️ SteuerboxHub Version ' . $lib['Version'] . ' (Build ' . ($lib['Build'] ?? '?') . ')'
             : 'ℹ️ SteuerboxHub';
         foreach ($form['elements'] as &$el) {
-            if (($el['type'] ?? '') === 'ExpansionPanel' && str_contains($el['caption'] ?? '', 'Dokumentation')) {
+            if (($el['name'] ?? '') === 'DocPanel') {
                 array_unshift($el['items'], ['type' => 'Label', 'caption' => $verTxt]);
                 return;
             }
@@ -728,8 +752,8 @@ class SteuerboxHub extends IPSModule
         $pMin = 4.2 + ($n - 1) * $gzf * 4.2;
 
         $this->UpdateFormField('LoadPMin', 'value', round($pMin, 2));
-        return sprintf('✅ Pmin = %s kW (n = %d, Gleichzeitigkeitsfaktor %s) ins Feld eingetragen. Gespeichert ist der Wert erst mit „Übernehmen“.',
-            self::fmt($pMin), $n, self::fmt($gzf));
+        return sprintf($this->Translate('✅ Pmin = %s kW (n = %d, simultaneity factor %s) entered in the field. The value is only saved with “Apply Changes”.'),
+            $this->fmt($pMin), $n, $this->fmt($gzf));
     }
 
     // Final freigegebener Vertrag für das EMS (Dietmar, 24.07.2026).
@@ -866,7 +890,7 @@ class SteuerboxHub extends IPSModule
                 case 'write':
                     $sync = $this->eebusApplyWrite($st, $now, (string) ($d['function'] ?? ''), (array) ($d['changes'] ?? []), (array) ($d['data'] ?? []));
                     if (($d['bound'] ?? true) === false) {
-                        $this->SendDebug('EEBUS', 'Schreibbefehl ohne vorherige Bindung (zugelassen)', 0);
+                        $this->SendDebug('EEBUS', $this->Translate('Write command without prior binding (accepted)'), 0);
                     }
                     break;
             }
@@ -895,19 +919,20 @@ class SteuerboxHub extends IPSModule
                     'until'  => $dur > 0 ? $now + $dur : 0,
                 ];
                 $changed = true;
-                $this->LogMessage(sprintf(
-                    'EEBUS: %s %s%s',
-                    $id === self::LIMIT_CONSUMPTION ? 'Bezugsgrenze' : 'Einspeisegrenze',
-                    $st['limits'][$id]['active'] ? round($w / 1000, 3) . ' kW aktiv' : 'aufgehoben',
-                    $dur > 0 ? ' für ' . $dur . ' s' : ''
-                ), KL_MESSAGE);
+                $consumption = $id === self::LIMIT_CONSUMPTION;
+                if ($st['limits'][$id]['active']) {
+                    $msg = sprintf($this->Translate($consumption ? 'EEBUS: consumption limit %s kW active' : 'EEBUS: feed-in limit %s kW active'), round($w / 1000, 3));
+                } else {
+                    $msg = $this->Translate($consumption ? 'EEBUS: consumption limit lifted' : 'EEBUS: feed-in limit lifted');
+                }
+                $this->LogMessage($msg . ($dur > 0 ? sprintf($this->Translate(' for %d s'), $dur) : ''), KL_MESSAGE);
             }
             // Ein neuer Grenzwert beendet den Ausfallzustand (LPC/LPP Szenario 3).
             if ($changed) {
                 $st['lastWriteAt'] = $now;
                 $st['lastAlive']   = $now;
                 if ($st['mode'] !== 'normal') {
-                    $this->LogMessage('EEBUS: Steuerbox steuert wieder, Ausfallgrenze aufgehoben.', KL_MESSAGE);
+                    $this->LogMessage($this->Translate('EEBUS: control box is back in control, failsafe limit lifted.'), KL_MESSAGE);
                 }
                 $st['mode'] = 'normal';
                 $st['failsafeSince'] = 0;
@@ -931,7 +956,7 @@ class SteuerboxHub extends IPSModule
                     $st['failsafeRemote']['durationS'] = $clamped;
                 }
             }
-            $this->LogMessage('EEBUS: Ausfallwerte von der Steuerbox übernommen: ' . $this->eebusFailsafeText($st), KL_MESSAGE);
+            $this->LogMessage(sprintf($this->Translate('EEBUS: failsafe values taken over from the control box: %s'), $this->eebusFailsafeText($st)), KL_MESSAGE);
             return $fix ? ['failsafe'] : [];
         }
         return [];
@@ -944,7 +969,7 @@ class SteuerboxHub extends IPSModule
         }
         $st['mode'] = 'failsafe';
         $st['failsafeSince'] = $now;
-        $this->LogMessage('EEBUS: Steuerbox seit über 120 s nicht erreichbar, Ausfallgrenze gilt: ' . $this->eebusFailsafeText($st), KL_WARNING);
+        $this->LogMessage(sprintf($this->Translate('EEBUS: control box unreachable for more than 120 s, failsafe limit applies: %s'), $this->eebusFailsafeText($st)), KL_WARNING);
     }
 
     /**
@@ -956,7 +981,7 @@ class SteuerboxHub extends IPSModule
     {
         $sem = 'SBH_EEBus_' . $this->InstanceID;
         if (!IPS_SemaphoreEnter($sem, 2000)) {
-            $this->SendDebug('EEBUS', 'Sperre belegt, Aufruf verworfen', 0);
+            $this->SendDebug('EEBUS', $this->Translate('Lock busy, call discarded'), 0);
             return [];
         }
         try {
@@ -971,7 +996,7 @@ class SteuerboxHub extends IPSModule
                     $st['mode'] = 'normal';
                 } elseif ($st['mode'] === 'autonomous') {
                     $st['mode'] = 'normal';
-                    $this->LogMessage('EEBUS: Steuerbox wieder erreichbar, Betrieb ohne Begrenzung bis zum nächsten Grenzwert.', KL_MESSAGE);
+                    $this->LogMessage($this->Translate('EEBUS: control box reachable again, operating without a limit until the next limit value.'), KL_MESSAGE);
                 }
             } elseif ($st['mode'] === 'normal' && $st['lastAlive'] > 0 && $now - $st['lastAlive'] > self::EEBUS_HEARTBEAT_TIMEOUT_S
                 && $this->eebusGatewayID() > 0) {
@@ -985,7 +1010,7 @@ class SteuerboxHub extends IPSModule
                 $st['mode'] = $alive ? 'normal' : 'autonomous';
                 $st['failsafeSince'] = 0;
                 $sync[] = 'limits';
-                $this->LogMessage('EEBUS: Mindestdauer des Ausfallzustands abgelaufen, keine Begrenzung mehr.', KL_MESSAGE);
+                $this->LogMessage($this->Translate('EEBUS: minimum duration of the failsafe state elapsed, no limit any more.'), KL_MESSAGE);
             }
 
             // Befristung abgelaufen: Grenze inaktiv und der Steuerbox den tatsächlichen Stand melden.
@@ -995,7 +1020,7 @@ class SteuerboxHub extends IPSModule
                     $st['limits'][$id]['active'] = false;
                     $st['limits'][$id]['until']  = 0;
                     $sync[] = 'limits';
-                    $this->LogMessage('EEBUS: Befristung der ' . ($id === self::LIMIT_CONSUMPTION ? 'Bezugsgrenze' : 'Einspeisegrenze') . ' abgelaufen.', KL_MESSAGE);
+                    $this->LogMessage($this->Translate($id === self::LIMIT_CONSUMPTION ? 'EEBUS: the consumption limit has expired (time limit reached).' : 'EEBUS: the feed-in limit has expired (time limit reached).'), KL_MESSAGE);
                 }
             }
 
@@ -1084,13 +1109,15 @@ class SteuerboxHub extends IPSModule
     {
         $fs = $this->eebusFailsafeValues($st);
         $r  = $st['failsafeRemote'];
+        $fromBox = $this->Translate('from the control box');
+        $default = $this->Translate('default');
         return sprintf(
-            'Bezug %s kW (%s), Einspeisung %s, Mindestdauer %s h (%s)',
-            self::fmt($fs['consumptionW'] / 1000),
-            isset($r['consumptionW']) ? 'von der Steuerbox' : 'Vorgabe Pmin',
-            $fs['productionW'] === null ? 'unbegrenzt (keine Vorgabe)' : self::fmt($fs['productionW'] / 1000) . ' kW (' . (isset($r['productionW']) ? 'von der Steuerbox' : 'Vorgabe') . ')',
-            self::fmt($fs['durationS'] / 3600),
-            isset($r['durationS']) ? 'von der Steuerbox' : 'Vorgabe'
+            $this->Translate('Consumption %s kW (%s), feed-in %s, minimum duration %s h (%s)'),
+            $this->fmt($fs['consumptionW'] / 1000),
+            isset($r['consumptionW']) ? $fromBox : $this->Translate('default Pmin'),
+            $fs['productionW'] === null ? $this->Translate('unlimited (no default)') : sprintf($this->Translate('%s kW (%s)'), $this->fmt($fs['productionW'] / 1000), isset($r['productionW']) ? $fromBox : $default),
+            $this->fmt($fs['durationS'] / 3600),
+            isset($r['durationS']) ? $fromBox : $default
         );
     }
 
@@ -1156,7 +1183,7 @@ class SteuerboxHub extends IPSModule
         try {
             return (string) SBHE_Forward($bridge, json_encode($request));
         } catch (Throwable $e) {
-            $this->LogMessage('EEBUS: Anfrage ' . ($request['Cmd'] ?? '?') . ' über die Anbindung #' . $bridge . ' fehlgeschlagen: ' . $e->getMessage(), KL_WARNING);
+            $this->LogMessage(sprintf($this->Translate('EEBUS: request %s via connector #%d failed: %s'), $request['Cmd'] ?? '?', $bridge, $e->getMessage()), KL_WARNING);
             return '';
         }
     }
@@ -1201,15 +1228,15 @@ class SteuerboxHub extends IPSModule
                 $this->WriteAttributeString('EEBusState', '');
                 $st = $this->eebusLoadState();
                 $st['gateway'] = $parent;
-                $this->LogMessage('EEBUS: an Gateway #' . $parent . ' angemeldet, früherer Zustand verworfen.', KL_MESSAGE);
+                $this->LogMessage(sprintf($this->Translate('EEBUS: registered with gateway #%d, previous state discarded.'), $parent), KL_MESSAGE);
             }
             $st['registeredWith'] = $parent;
             $st['entity'] = (int) ($r['entity'] ?? 0);
             $st['registerError'] = '';
         } else {
             $st['registeredWith'] = 0;
-            $st['registerError'] = is_array($r) ? (string) ($r['error'] ?? 'unbekannte Antwort') : 'keine Antwort';
-            $this->LogMessage('EEBUS: Anmeldung beim Gateway #' . $parent . ' fehlgeschlagen: ' . $st['registerError'], KL_WARNING);
+            $st['registerError'] = is_array($r) ? (string) ($r['error'] ?? $this->Translate('unknown response')) : $this->Translate('no response');
+            $this->LogMessage(sprintf($this->Translate('EEBUS: registration with gateway #%d failed: %s'), $parent, $st['registerError']), KL_WARNING);
         }
         $this->WriteAttributeString('EEBusState', json_encode($st));
         if ($st['registeredWith'] > 0) {
@@ -1278,7 +1305,7 @@ class SteuerboxHub extends IPSModule
         foreach ($calls as [$feature, $function, $data]) {
             $r = json_decode($this->eebusCall(['Cmd' => 'SetData', 'Feature' => $feature, 'Function' => $function, 'Data' => $data]), true);
             if (!is_array($r) || ($r['ok'] ?? false) !== true) {
-                $this->LogMessage('EEBUS: Daten ' . $function . ' vom Gateway nicht übernommen: ' . (is_array($r) ? ($r['error'] ?? '?') : 'keine Antwort'), KL_WARNING);
+                $this->LogMessage(sprintf($this->Translate('EEBUS: data %s not accepted by the gateway: %s'), $function, is_array($r) ? ($r['error'] ?? '?') : $this->Translate('no response')), KL_WARNING);
             }
         }
     }
@@ -1313,19 +1340,19 @@ class SteuerboxHub extends IPSModule
     public function CreateEEBusBridge()
     {
         $id = IPS_CreateInstance(self::BRIDGE_MODULE_ID);
-        IPS_SetName($id, 'EEBUS-Anbindung ' . IPS_GetName($this->InstanceID));
+        IPS_SetName($id, sprintf($this->Translate('EEBUS connector %s'), IPS_GetName($this->InstanceID)));
         IPS_SetParent($id, IPS_GetParent($this->InstanceID));
         $gws = array_values(array_filter((array) @IPS_GetInstanceListByModuleID(self::EEBGW_MODULE_ID), 'IPS_InstanceExists'));
-        $text = '✅ EEBUS-Anbindung #' . $id . ' angelegt';
+        $text = sprintf($this->Translate('✅ EEBUS connector #%d created'), $id);
         if (count($gws) === 1) {
             IPS_ConnectInstance($id, $gws[0]);
-            $text .= ' und mit dem EEBUS-Gateway #' . $gws[0] . ' verbunden';
+            $text .= sprintf($this->Translate(' and connected to EEBUS gateway #%d'), $gws[0]);
         } else {
-            $text .= '. ' . ($gws === [] ? 'Noch kein EEBUS-Gateway vorhanden: zuerst ein „NRG-Stack EEBUS-Gateway“ anlegen, dann bei der Anbindung „Gateway ändern“.' : 'Mehrere EEBUS-Gateways: bei der Anbindung per „Gateway ändern“ das richtige zuordnen.');
+            $text .= '. ' . ($gws === [] ? $this->Translate('No EEBUS gateway exists yet: first create an “NRG-Stack EEBUS Gateway”, then choose “Change gateway” on the connector') : $this->Translate('Several EEBUS gateways: assign the right one on the connector with “Change gateway”'));
         }
         IPS_ApplyChanges($id);
         $this->UpdateFormField('EEBusBridgeID', 'value', $id);
-        return $text . '. Zum Speichern der Auswahl „Übernehmen“ klicken.';
+        return $text . $this->Translate('. Click “Apply Changes” to save the selection.');
     }
 
     /** Formular: Statuszeilen des EEBus-Panels live füllen. */
@@ -1357,54 +1384,56 @@ class SteuerboxHub extends IPSModule
 
         if ($bridge === 0) {
             $conn = $bridgeCount > 1 && $this->ReadPropertyInteger('EEBusBridgeID') === 0
-                ? '⚠️ Mehrere EEBUS-Anbindungen vorhanden: unten die gewünschte auswählen.'
-                : 'ℹ️ Noch keine EEBUS-Anbindung: unten „EEBUS-Anbindung anlegen“ klicken. Sie wird mit dem EEBUS-Gateway verbunden (oder dort per „Gateway ändern“ zugeordnet). Ohne sie liefert dieser Weg keine Signale.';
+                ? $this->Translate('⚠️ Several EEBUS connectors exist: select the one you want below.')
+                : $this->Translate('ℹ️ No EEBUS connector yet: click “Create EEBUS connector” below. It is connected to the EEBUS gateway (or assigned there with “Change gateway”). Without it this path delivers no signals.');
         } elseif ($parent === 0) {
-            $conn = 'ℹ️ Die EEBUS-Anbindung #' . $bridge . ' hängt an keinem NRG-Stack EEBUS-Gateway: dort „Gateway ändern“ wählen und das Gateway zuordnen (oder neu anlegen).';
+            $conn = sprintf($this->Translate('ℹ️ EEBUS connector #%d is not attached to any NRG-Stack EEBUS Gateway: choose “Change gateway” there and assign the gateway (or create a new one).'), $bridge);
         } elseif ($st['registeredWith'] === 0) {
-            $conn = '⚠️ Gateway #' . $parent . ' (' . IPS_GetName($parent) . ') hat die Anmeldung nicht bestätigt: ' . ($st['registerError'] !== '' ? $st['registerError'] : 'noch keine Antwort') . '.';
+            $conn = sprintf($this->Translate('⚠️ Gateway #%d (%s) has not confirmed the registration: %s.'), $parent, IPS_GetName($parent), $st['registerError'] !== '' ? $st['registerError'] : $this->Translate('no response yet'));
         } elseif ($st['trustPending']) {
-            $conn = '⚠️ Gateway #' . $parent . ' (' . IPS_GetName($parent) . '): die Steuerbox hat das Gateway noch nicht freigegeben (SKI des Gateways beim Netz- bzw. Messstellenbetreiber eintragen lassen).';
+            $conn = sprintf($this->Translate('⚠️ Gateway #%d (%s): the control box has not yet released the gateway (ask the grid or metering point operator to enter the gateway SKI).'), $parent, IPS_GetName($parent));
         } elseif ($st['connected']) {
-            $uc = $st['remoteUseCases'] !== [] ? ', bietet ' . implode('/', $st['remoteUseCases']) : '';
-            $conn = '✅ Verbunden über Anbindung #' . $bridge . ' und Gateway #' . $parent . ' (' . IPS_GetName($parent) . ') mit Steuerbox ' . ($st['remoteShipId'] !== '' ? $st['remoteShipId'] : '?') . $uc . '; angemeldet als Entität ' . $st['entity'] . ' (LPC und LPP).';
+            $uc = $st['remoteUseCases'] !== [] ? sprintf($this->Translate(', offers %s'), implode('/', $st['remoteUseCases'])) : '';
+            $conn = sprintf($this->Translate('✅ Connected via connector #%d and gateway #%d (%s) to control box %s%s; registered as entity %d (LPC and LPP).'),
+                $bridge, $parent, IPS_GetName($parent), $st['remoteShipId'] !== '' ? $st['remoteShipId'] : '?', $uc, $st['entity']);
         } else {
-            $conn = '⚠️ Angemeldet bei Gateway #' . $parent . ' (' . IPS_GetName($parent) . '), aber gerade keine Verbindung zur Steuerbox' . ($st['lastAlive'] > 0 ? ' (zuletzt erreichbar ' . date('d.m.Y H:i', $st['lastAlive']) . ' Uhr)' : '') . '.';
+            $conn = sprintf($this->Translate('⚠️ Registered with gateway #%d (%s), but currently no connection to the control box%s.'), $parent, IPS_GetName($parent),
+                $st['lastAlive'] > 0 ? sprintf($this->Translate(' (last reachable %s)'), $this->dt($st['lastAlive'])) : '');
         }
 
         $limitText = function (int $id) use ($st, $now): string {
             $l = $st['limits'][$id];
             if (!$l['active'] || ($l['until'] > 0 && $now >= $l['until'])) {
-                return 'keine';
+                return $this->Translate('none');
             }
-            return self::fmt($l['w'] / 1000) . ' kW' . ($l['until'] > 0 ? ' bis ' . date('d.m.Y H:i', $l['until']) . ' Uhr' : ' (unbefristet)');
+            return $this->fmt($l['w'] / 1000) . ' kW' . ($l['until'] > 0 ? sprintf($this->Translate(' until %s'), $this->dt($l['until'])) : $this->Translate(' (no time limit)'));
         };
         switch ($parent === 0 ? 'none' : $st['mode']) {
             case 'none':
-                $state = 'ℹ️ Ohne EEBUS-Anbindung mit Gateway gilt keine Begrenzung.';
+                $state = $this->Translate('ℹ️ Without an EEBUS connector attached to a gateway, no limit applies.');
                 break;
             case 'failsafe':
                 $fsEnd = $st['failsafeSince'] + $this->eebusFailsafeDuration($st);
-                $state = '⛔ Ausfallzustand seit ' . date('d.m.Y H:i', $st['failsafeSince']) . ' Uhr, spätestens bis ' . date('d.m.Y H:i', $fsEnd) . ' Uhr (oder bis die Steuerbox einen neuen Grenzwert schickt).';
+                $state = sprintf($this->Translate('⛔ Failsafe state since %s, at the latest until %s (or until the control box sends a new limit).'), $this->dt($st['failsafeSince']), $this->dt($fsEnd));
                 break;
             case 'autonomous':
-                $state = '⚠️ Ausfall länger als die Mindestdauer: keine Begrenzung, bis die Steuerbox wieder erreichbar ist.';
+                $state = $this->Translate('⚠️ Failure longer than the minimum duration: no limit until the control box is reachable again.');
                 break;
             case 'unpaired':
-                $state = 'ℹ️ Noch nie mit einer Steuerbox verbunden: keine Begrenzung.';
+                $state = $this->Translate('ℹ️ Never connected to a control box: no limit.');
                 break;
             default:
-                $state = 'Gesteuert durch die Steuerbox. Bezugsgrenze: ' . $limitText(self::LIMIT_CONSUMPTION) . '. Einspeisegrenze: ' . $limitText(self::LIMIT_PRODUCTION) . '.';
+                $state = sprintf($this->Translate('Controlled by the control box. Consumption limit: %s. Feed-in limit: %s.'), $limitText(self::LIMIT_CONSUMPTION), $limitText(self::LIMIT_PRODUCTION));
         }
 
         $lines = [
             'EEBusConnectionLine' => ['caption' => $conn],
             'EEBusStateLine'      => ['caption' => $state],
-            'EEBusFailsafeLine'   => ['caption' => 'Ausfallwerte: ' . $this->eebusFailsafeText($st) . '.'],
+            'EEBusFailsafeLine'   => ['caption' => sprintf($this->Translate('Failsafe values: %s.'), $this->eebusFailsafeText($st))],
         ];
         $lines['EEBusProductionNominalLine'] = $this->ReadPropertyFloat('EEBusProductionNominalKw') > 0
-            ? ['caption' => '✏️ Bezugsgröße für die Einspeisegrenze in Prozent: ' . self::fmt($this->ReadPropertyFloat('EEBusProductionNominalKw')) . ' kWp (eigene Eingabe, muss zur PV-Leistung im EMS passen).']
-            : ['caption' => '⛔ Pflichtangabe, sobald die Steuerbox die Einspeisung begrenzt: ohne PV-Leistung meldet SteuerboxHub bei jeder Einspeisegrenze 0 % (keine Einspeisung), weil sich Watt nicht in Prozent umrechnen lassen.', 'color' => 0xFF0000];
+            ? ['caption' => sprintf($this->Translate('✏️ Reference value for the feed-in limit in percent: %s kWp (your own entry, must match the PV capacity in the EMS).'), $this->fmt($this->ReadPropertyFloat('EEBusProductionNominalKw')))]
+            : ['caption' => $this->Translate('⛔ Mandatory once the control box limits feed-in: without the PV capacity SteuerboxHub reports 0 % (no feed-in) for every feed-in limit, because watts cannot be converted into percent.'), 'color' => 0xFF0000];
         return $lines;
     }
 
@@ -1447,9 +1476,17 @@ class SteuerboxHub extends IPSModule
         return $ts === false ? 0 : max(1, $ts - $now);
     }
 
-    private static function fmt(float $v): string
+    /** Zahl mit Dezimaltrenner der Symcon-Sprache (Komma auf Deutsch, Punkt sonst). */
+    private function fmt(float $v): string
     {
-        return rtrim(rtrim(number_format($v, 2, ',', ''), '0'), ',');
+        $sep = $this->Translate('decimal separator') === ',' ? ',' : '.';
+        return rtrim(rtrim(number_format($v, 2, $sep, ''), '0'), $sep);
+    }
+
+    /** Zeitpunkt in der Schreibweise der Symcon-Sprache (Deutsch: TT.MM.JJJJ HH:MM). */
+    private function dt(int $ts): string
+    {
+        return date($this->Translate('Y-m-d H:i'), $ts);
     }
 
     /** Zeitquelle (im Prüfstand ersetzbar). */

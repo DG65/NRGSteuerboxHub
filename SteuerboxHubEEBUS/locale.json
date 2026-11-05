@@ -1,0 +1,16 @@
+{
+  "translations": {
+    "de": {
+      "✅ Connected to EEBUS gateway #%d (%s).": "✅ Verbunden mit EEBUS-Gateway #%d (%s).",
+      "ℹ️ No EEBUS gateway assigned yet: choose “Change gateway” above and select the NRG-Stack EEBUS Gateway (or create a new one).": "ℹ️ Noch kein EEBUS-Gateway zugeordnet: oben „Gateway ändern“ wählen und das NRG-Stack EEBUS-Gateway auswählen (oder neu anlegen).",
+      "This connector links SteuerboxHub to the NRG-Stack EEBUS Gateway. It only passes data on: settings, state and limits are in the SteuerboxHub instance (transport path EEBUS).": "Diese Anbindung verbindet SteuerboxHub mit dem NRG-Stack EEBUS-Gateway. Sie reicht nur weiter: Einstellungen, Zustand und Grenzwerte stehen in der SteuerboxHub-Instanz (Transportweg EEBUS).",
+      "ℹ️ No SteuerboxHub instance found.": "ℹ️ Keine SteuerboxHub-Instanz gefunden.",
+      "SteuerboxHub instances: %s. Which one uses this connector is shown there in the EEBUS section.": "SteuerboxHub-Instanzen: %s. Welche diese Anbindung nutzt, steht dort im Abschnitt EEBUS.",
+      "Connected to the EEBUS gateway.": "Mit dem EEBUS-Gateway verbunden.",
+      "No EEBUS gateway assigned yet.": "Noch kein EEBUS-Gateway zugeordnet.",
+      "SteuerboxHub #%d unreachable: %s": "SteuerboxHub #%d nicht erreichbar: %s",
+      "Request %s to the gateway failed: %s": "Anfrage %s an das Gateway fehlgeschlagen: %s",
+      "Forwarding to SteuerboxHub #%d failed: %s": "Weitergabe an SteuerboxHub #%d fehlgeschlagen: %s"
+    }
+  }
+}

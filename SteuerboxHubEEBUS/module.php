@@ -51,7 +51,7 @@ class SteuerboxHubEEBUS extends IPSModule
                     try {
                         SBH_CheckEEBus($sbh);
                     } catch (Throwable $e) {
-                        $this->LogMessage('SteuerboxHub #' . $sbh . ' nicht erreichbar: ' . $e->getMessage(), KL_WARNING);
+                        $this->LogMessage(sprintf($this->Translate('SteuerboxHub #%d unreachable: %s'), $sbh, $e->getMessage()), KL_WARNING);
                     }
                 }
             }
@@ -72,7 +72,7 @@ class SteuerboxHubEEBUS extends IPSModule
         try {
             return (string) $this->SendDataToParent(json_encode($request));
         } catch (Throwable $e) {
-            $this->LogMessage('Anfrage ' . ($request['Cmd'] ?? '?') . ' an das Gateway fehlgeschlagen: ' . $e->getMessage(), KL_WARNING);
+            $this->LogMessage(sprintf($this->Translate('Request %s to the gateway failed: %s'), $request['Cmd'] ?? '?', $e->getMessage()), KL_WARNING);
             return '';
         }
     }
@@ -86,7 +86,7 @@ class SteuerboxHubEEBUS extends IPSModule
             try {
                 SBH_ProcessEEBus($sbh, $this->InstanceID, (string) $JSONString);
             } catch (Throwable $e) {
-                $this->LogMessage('Weitergabe an SteuerboxHub #' . $sbh . ' fehlgeschlagen: ' . $e->getMessage(), KL_WARNING);
+                $this->LogMessage(sprintf($this->Translate('Forwarding to SteuerboxHub #%d failed: %s'), $sbh, $e->getMessage()), KL_WARNING);
             }
         }
         return '';
@@ -116,23 +116,23 @@ class SteuerboxHubEEBUS extends IPSModule
     {
         $gw = $this->gatewayID();
         $line = $gw > 0
-            ? '✅ Verbunden mit EEBUS-Gateway #' . $gw . ' (' . IPS_GetName($gw) . ').'
-            : 'ℹ️ Noch kein EEBUS-Gateway zugeordnet: oben „Gateway ändern“ wählen und das NRG-Stack EEBUS-Gateway auswählen (oder neu anlegen).';
+            ? sprintf($this->Translate('✅ Connected to EEBUS gateway #%d (%s).'), $gw, IPS_GetName($gw))
+            : $this->Translate('ℹ️ No EEBUS gateway assigned yet: choose “Change gateway” above and select the NRG-Stack EEBUS Gateway (or create a new one).');
         $users = array_map(function ($i) {
             return '#' . $i . ' (' . IPS_GetName($i) . ')';
         }, $this->users());
         return json_encode([
             'elements' => [
-                ['type' => 'Label', 'caption' => 'Diese Anbindung verbindet SteuerboxHub mit dem NRG-Stack EEBUS-Gateway. Sie reicht nur weiter: Einstellungen, Zustand und Grenzwerte stehen in der SteuerboxHub-Instanz (Transportweg EEBUS).'],
+                ['type' => 'Label', 'caption' => $this->Translate('This connector links SteuerboxHub to the NRG-Stack EEBUS Gateway. It only passes data on: settings, state and limits are in the SteuerboxHub instance (transport path EEBUS).')],
                 ['type' => 'Label', 'caption' => $line],
                 ['type' => 'Label', 'caption' => $users === []
-                    ? 'ℹ️ Keine SteuerboxHub-Instanz gefunden.'
-                    : 'SteuerboxHub-Instanzen: ' . implode(', ', $users) . '. Welche diese Anbindung nutzt, steht dort im Abschnitt EEBUS.'],
+                    ? $this->Translate('ℹ️ No SteuerboxHub instance found.')
+                    : sprintf($this->Translate('SteuerboxHub instances: %s. Which one uses this connector is shown there in the EEBUS section.'), implode(', ', $users))],
             ],
             'actions' => [],
             'status'  => [
-                ['code' => 102, 'icon' => 'active', 'caption' => 'Mit dem EEBUS-Gateway verbunden.'],
-                ['code' => 104, 'icon' => 'inactive', 'caption' => 'Noch kein EEBUS-Gateway zugeordnet.'],
+                ['code' => 102, 'icon' => 'active', 'caption' => $this->Translate('Connected to the EEBUS gateway.')],
+                ['code' => 104, 'icon' => 'inactive', 'caption' => $this->Translate('No EEBUS gateway assigned yet.')],
             ],
         ]);
     }
