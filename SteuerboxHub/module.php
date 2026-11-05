@@ -925,7 +925,7 @@ class SteuerboxHub extends IPSModule
                 } else {
                     $msg = $this->Translate($consumption ? 'EEBUS: consumption limit lifted' : 'EEBUS: feed-in limit lifted');
                 }
-                $this->LogMessage($msg . ($dur > 0 ? sprintf($this->Translate(' for %d s'), $dur) : ''), KL_MESSAGE);
+                $this->LogMessage($msg . ($dur > 0 ? ' ' . sprintf($this->Translate('for %d s'), $dur) : ''), KL_MESSAGE);
             }
             // Ein neuer Grenzwert beendet den Ausfallzustand (LPC/LPP Szenario 3).
             if ($changed) {
@@ -1346,13 +1346,13 @@ class SteuerboxHub extends IPSModule
         $text = sprintf($this->Translate('✅ EEBUS connector #%d created'), $id);
         if (count($gws) === 1) {
             IPS_ConnectInstance($id, $gws[0]);
-            $text .= sprintf($this->Translate(' and connected to EEBUS gateway #%d'), $gws[0]);
+            $text .= ' ' . sprintf($this->Translate('and connected to EEBUS gateway #%d'), $gws[0]);
         } else {
             $text .= '. ' . ($gws === [] ? $this->Translate('No EEBUS gateway exists yet: first create an “NRG-Stack EEBUS Gateway”, then choose “Change gateway” on the connector') : $this->Translate('Several EEBUS gateways: assign the right one on the connector with “Change gateway”'));
         }
         IPS_ApplyChanges($id);
         $this->UpdateFormField('EEBusBridgeID', 'value', $id);
-        return $text . $this->Translate('. Click “Apply Changes” to save the selection.');
+        return $text . '. ' . $this->Translate('Click “Apply Changes” to save the selection.');
     }
 
     /** Formular: Statuszeilen des EEBus-Panels live füllen. */
@@ -1393,12 +1393,12 @@ class SteuerboxHub extends IPSModule
         } elseif ($st['trustPending']) {
             $conn = sprintf($this->Translate('⚠️ Gateway #%d (%s): the control box has not yet released the gateway (ask the grid or metering point operator to enter the gateway SKI).'), $parent, IPS_GetName($parent));
         } elseif ($st['connected']) {
-            $uc = $st['remoteUseCases'] !== [] ? sprintf($this->Translate(', offers %s'), implode('/', $st['remoteUseCases'])) : '';
+            $uc = $st['remoteUseCases'] !== [] ? ', ' . sprintf($this->Translate('offers %s'), implode('/', $st['remoteUseCases'])) : '';
             $conn = sprintf($this->Translate('✅ Connected via connector #%d and gateway #%d (%s) to control box %s%s; registered as entity %d (LPC and LPP).'),
                 $bridge, $parent, IPS_GetName($parent), $st['remoteShipId'] !== '' ? $st['remoteShipId'] : '?', $uc, $st['entity']);
         } else {
             $conn = sprintf($this->Translate('⚠️ Registered with gateway #%d (%s), but currently no connection to the control box%s.'), $parent, IPS_GetName($parent),
-                $st['lastAlive'] > 0 ? sprintf($this->Translate(' (last reachable %s)'), $this->dt($st['lastAlive'])) : '');
+                $st['lastAlive'] > 0 ? ' (' . sprintf($this->Translate('last reachable %s'), $this->dt($st['lastAlive'])) . ')' : '');
         }
 
         $limitText = function (int $id) use ($st, $now): string {
@@ -1406,7 +1406,7 @@ class SteuerboxHub extends IPSModule
             if (!$l['active'] || ($l['until'] > 0 && $now >= $l['until'])) {
                 return $this->Translate('none');
             }
-            return $this->fmt($l['w'] / 1000) . ' kW' . ($l['until'] > 0 ? sprintf($this->Translate(' until %s'), $this->dt($l['until'])) : $this->Translate(' (no time limit)'));
+            return $this->fmt($l['w'] / 1000) . ' kW' . ($l['until'] > 0 ? ' ' . sprintf($this->Translate('until %s'), $this->dt($l['until'])) : ' (' . $this->Translate('no time limit') . ')');
         };
         switch ($parent === 0 ? 'none' : $st['mode']) {
             case 'none':

@@ -559,6 +559,14 @@ pruefe(array_keys($locAlle) === ['de'] && count(array_unique(array_values($locAl
 $ohneKopie = array_filter($locAlle['de'], function ($de, $en) { return $de === $en && mb_strlen($en) > 20; }, ARRAY_FILTER_USE_BOTH);
 pruefe($ohneKopie === [], 'locale.json: keine unübersetzten Einträge (Deutsch gleich Englisch)');
 
+$randLeer = [];
+foreach (['SteuerboxHub', 'SteuerboxHubEEBUS'] as $mod) {
+    foreach (array_keys(json_decode(file_get_contents("$wurzel/$mod/locale.json"), true)['translations']['de']) as $k) {
+        if ($k !== trim($k)) { $randLeer[] = "$mod: '$k'"; }
+    }
+}
+pruefe($randLeer === [], 'locale.json: kein Schlüssel mit Leerzeichen am Rand (Symcon-Suche exakt)' . ($randLeer ? ' — ' . $randLeer[0] : ''));
+
 // Stolperstein 24: der 10-s-Timer ruft kein Translate() auf.
 IPSModule::$translateCalls = 0;
 $sb->CheckEEBus();
