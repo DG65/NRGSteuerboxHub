@@ -117,22 +117,22 @@ class SteuerboxHubEEBUS extends IPSModule
         $gw = $this->gatewayID();
         $line = $gw > 0
             ? sprintf($this->Translate('✅ Connected to EEBUS gateway #%d (%s).'), $gw, IPS_GetName($gw))
-            : $this->Translate('ℹ️ No EEBUS gateway assigned yet: choose “Change gateway” above and select the NRG-Stack EEBUS Gateway (or create a new one).');
+            : 'ℹ️ No EEBUS gateway assigned yet: choose “Change gateway” above and select the NRG-Stack EEBUS Gateway (or create a new one).';
         $users = array_map(function ($i) {
             return '#' . $i . ' (' . IPS_GetName($i) . ')';
         }, $this->users());
         return json_encode([
             'elements' => [
-                ['type' => 'Label', 'caption' => $this->Translate('This connector links SteuerboxHub to the NRG-Stack EEBUS Gateway. It only passes data on: settings, state and limits are in the SteuerboxHub instance (transport path EEBUS).')],
+                ['type' => 'Label', 'caption' => 'This connector links SteuerboxHub to the NRG-Stack EEBUS Gateway. It only passes data on: settings, state and limits are in the SteuerboxHub instance (transport path EEBUS).'],
                 ['type' => 'Label', 'caption' => $line],
                 ['type' => 'Label', 'caption' => $users === []
-                    ? $this->Translate('ℹ️ No SteuerboxHub instance found.')
+                    ? 'ℹ️ No SteuerboxHub instance found.'
                     : sprintf($this->Translate('SteuerboxHub instances: %s. Which one uses this connector is shown there in the EEBUS section.'), implode(', ', $users))],
             ],
             'actions' => [],
             'status'  => [
-                ['code' => 102, 'icon' => 'active', 'caption' => $this->Translate('Connected to the EEBUS gateway.')],
-                ['code' => 104, 'icon' => 'inactive', 'caption' => $this->Translate('No EEBUS gateway assigned yet.')],
+                ['code' => 102, 'icon' => 'active', 'caption' => 'Connected to the EEBUS gateway.'],
+                ['code' => 104, 'icon' => 'inactive', 'caption' => 'No EEBUS gateway assigned yet.'],
             ],
         ]);
     }

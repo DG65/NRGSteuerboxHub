@@ -270,17 +270,38 @@ class FakeGateway
 require dirname(__DIR__) . '/SteuerboxHub/module.php';
 require dirname(__DIR__) . '/SteuerboxHubEEBUS/module.php';
 
+/**
+ * Bildet die Symcon-Konsole nach (Store-Review 25): sie übersetzt caption und Optionen des Formulars selbst aus locale.json.
+ * Die Module übersetzen ihr Formular NICHT; Popups, Meldungen und Texte mit Werten übersetzen sie selbst.
+ */
+function konsoleUebersetzt(string $json, IPSModule $m): string
+{
+    $f = json_decode($json, true);
+    $walk = function (&$n) use (&$walk, $m) {
+        foreach ($n as $k => &$v) {
+            if (is_array($v)) { $walk($v); }
+            elseif ($k === 'caption' && is_string($v) && $v !== '') { $v = $m->Translate($v); }
+        }
+    };
+    $walk($f);
+    return json_encode($f);
+}
+
 class TestSBH extends SteuerboxHub
 {
     public $name = 'SteuerboxHub (Test)';
     public $modul = '{B76BE0BA-DF99-4B81-81BD-636A610011EE}';
     protected function now(): int { return $GLOBALS['NOW']; }
+    public function GetConfigurationForm() { return konsoleUebersetzt(parent::GetConfigurationForm(), $this); }
+    public function GetConfigurationFormRoh() { return parent::GetConfigurationForm(); }
 }
 
 class TestBridge extends SteuerboxHubEEBUS
 {
     public $name = 'EEBUS-Anbindung (Test)';
     public $modul = '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}';
+    public function GetConfigurationForm() { return konsoleUebersetzt(parent::GetConfigurationForm(), $this); }
+    public function GetConfigurationFormRoh() { return parent::GetConfigurationForm(); }
 }
 
 /** ID der Brücke zu einer SteuerboxHub-Instanz im Prüfstand. */
@@ -566,6 +587,16 @@ foreach (['SteuerboxHub', 'SteuerboxHubEEBUS'] as $mod) {
     }
 }
 pruefe($randLeer === [], 'locale.json: kein Schlüssel mit Leerzeichen am Rand (Symcon-Suche exakt)' . ($randLeer ? ' — ' . $randLeer[0] : ''));
+
+// Store-Review 25: Das Modul übersetzt das Formular nicht selbst (die Konsole tut es); Roh-Formular bleibt Englisch.
+$rohSbh = json_decode($sb->GetConfigurationFormRoh(), true);
+$rohBr  = json_decode($brueckeInst->GetConfigurationFormRoh(), true);
+$rohTexte = array_merge($sammle($rohSbh), $sammle($rohBr));
+$formStatisch = $sammle(json_decode(file_get_contents($wurzel . '/SteuerboxHub/form.json'), true));
+$ersetzt = ['(calculated when the form is opened)', '✅ ApplyChanges() executed.'];   // Platzhalter und Popup-Texte übersetzt das Modul selbst (Review 25)
+$nichtRoh = array_values(array_filter($formStatisch, function ($t) use ($rohTexte, $neutral, $ersetzt) { return !$neutral($t) && !in_array($t, $ersetzt, true) && !in_array($t, $rohTexte, true); }));
+pruefe($nichtRoh === [] && in_array('📖 Documentation & Help', $rohTexte, true), 'Store-Review 25: statische Captions bleiben im Roh-Formular englisch, das Modul übersetzt sie nicht selbst' . ($nichtRoh ? ' — ' . mb_substr($nichtRoh[0], 0, 60) : ''));
+pruefe(strpos(file_get_contents($wurzel . '/SteuerboxHub/module.php'), 'translateForm') === false, 'Store-Review 25: keine Formular-Übersetzungsschleife im Code');
 
 // Stolperstein 24: der 10-s-Timer ruft kein Translate() auf.
 IPSModule::$translateCalls = 0;

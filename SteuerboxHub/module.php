@@ -145,7 +145,7 @@ class SteuerboxHub extends IPSModule
         if ($this->ReadPropertyInteger('Transport') === 0) {
             $this->applyContactsTransport();
             // Brücke vorhanden, aber Kontakte gewählt: beim Gateway keine LPC/LPP-Entität anbieten.
-            if ($this->eebusGatewayID() > 0 && IPS_GetKernelRunlevel() === KR_READY) {
+            if (IPS_GetKernelRunlevel() === KR_READY && $this->eebusGatewayID() > 0) {
                 $this->eebusCall(['Cmd' => 'Unregister']);
             }
         } else {
@@ -301,22 +301,20 @@ class SteuerboxHub extends IPSModule
             $tail,
             [$this->formLayoutPanel($layout), $this->formForumHint(), $this->formLicenseHint()]
         )));
-        $this->translateForm($form);
+        $this->translatePopups($form);
         return json_encode($form);
     }
 
     /**
-     * Übersetzt alle Anzeigetexte des fertig zusammengesetzten Formulars. Quelltext ist Englisch,
-     * die deutschen Texte stehen in locale.json; unbekannte Texte (z. B. schon gefüllte Statuszeilen) bleiben unverändert.
+     * Übersetzt die Popup-Texte in `onClick` (echo '…'). Die Konsole übersetzt caption und Optionen des Formulars selbst
+     * (aus locale.json), aber nicht den Text im Knopf-Skript.
      */
-    private function translateForm(array &$node): void
+    private function translatePopups(array &$node): void
     {
         foreach ($node as $key => &$value) {
             if (is_array($value)) {
-                $this->translateForm($value);
-            } elseif (is_string($value) && $value !== '' && $key === 'caption') {
-                $value = $this->Translate($value);
-            } elseif (is_string($value) && $key === 'onClick') {
+                $this->translatePopups($value);
+            } elseif ($key === 'onClick' && is_string($value)) {
                 $value = (string) preg_replace_callback("/echo '([^']*)';/u", function (array $m): string {
                     return "echo '" . $this->Translate($m[1]) . "';";
                 }, $value);
@@ -516,7 +514,7 @@ class SteuerboxHub extends IPSModule
             : [];
         return [
             'type' => 'ExpansionPanel', 'expanded' => false, 'name' => 'LayoutPanel',
-            'caption' => $hidden ? sprintf($this->Translate('🪟  Form layout (%d hidden)'), count($hidden)) : $this->Translate('🪟  Form layout'),
+            'caption' => $hidden ? sprintf($this->Translate('🪟  Form layout (%d hidden)'), count($hidden)) : '🪟  Form layout',
             'items' => array_merge($hiddenLine, [
                 ['type' => 'Label', 'caption' => 'Here you decide which areas are expanded when the form opens and in which order they appear. Symcon does not remember expanding and collapsing by itself, so this setting applies every time the form is opened. It takes effect after “Apply Changes”, the next time the form is opened.'],
                 ['type' => 'Label', 'caption' => 'No checkbox set means “default”: as the module intends it. The position is a number; with equal numbers the default order is kept. “Hidden” removes an area from the display without losing anything: its settings are kept and stay in effect. To show it again, clear the “Hidden” checkbox or click “Reset to default”. If several checkboxes are set, “Hidden” beats “Collapsed” beats “Expanded”. The areas at the top (purpose, news, documentation), the choice of the transport path, and the areas at the bottom (feedback, about this module) stay where they are and cannot be hidden.'],
@@ -1384,8 +1382,8 @@ class SteuerboxHub extends IPSModule
 
         if ($bridge === 0) {
             $conn = $bridgeCount > 1 && $this->ReadPropertyInteger('EEBusBridgeID') === 0
-                ? $this->Translate('⚠️ Several EEBUS connectors exist: select the one you want below.')
-                : $this->Translate('ℹ️ No EEBUS connector yet: click “Create EEBUS connector” below. It is connected to the EEBUS gateway (or assigned there with “Change gateway”). Without it this path delivers no signals.');
+                ? '⚠️ Several EEBUS connectors exist: select the one you want below.'
+                : 'ℹ️ No EEBUS connector yet: click “Create EEBUS connector” below. It is connected to the EEBUS gateway (or assigned there with “Change gateway”). Without it this path delivers no signals.';
         } elseif ($parent === 0) {
             $conn = sprintf($this->Translate('ℹ️ EEBUS connector #%d is not attached to any NRG-Stack EEBUS Gateway: choose “Change gateway” there and assign the gateway (or create a new one).'), $bridge);
         } elseif ($st['registeredWith'] === 0) {
@@ -1410,17 +1408,17 @@ class SteuerboxHub extends IPSModule
         };
         switch ($parent === 0 ? 'none' : $st['mode']) {
             case 'none':
-                $state = $this->Translate('ℹ️ Without an EEBUS connector attached to a gateway, no limit applies.');
+                $state = 'ℹ️ Without an EEBUS connector attached to a gateway, no limit applies.';
                 break;
             case 'failsafe':
                 $fsEnd = $st['failsafeSince'] + $this->eebusFailsafeDuration($st);
                 $state = sprintf($this->Translate('⛔ Failsafe state since %s, at the latest until %s (or until the control box sends a new limit).'), $this->dt($st['failsafeSince']), $this->dt($fsEnd));
                 break;
             case 'autonomous':
-                $state = $this->Translate('⚠️ Failure longer than the minimum duration: no limit until the control box is reachable again.');
+                $state = '⚠️ Failure longer than the minimum duration: no limit until the control box is reachable again.';
                 break;
             case 'unpaired':
-                $state = $this->Translate('ℹ️ Never connected to a control box: no limit.');
+                $state = 'ℹ️ Never connected to a control box: no limit.';
                 break;
             default:
                 $state = sprintf($this->Translate('Controlled by the control box. Consumption limit: %s. Feed-in limit: %s.'), $limitText(self::LIMIT_CONSUMPTION), $limitText(self::LIMIT_PRODUCTION));
@@ -1433,7 +1431,7 @@ class SteuerboxHub extends IPSModule
         ];
         $lines['EEBusProductionNominalLine'] = $this->ReadPropertyFloat('EEBusProductionNominalKw') > 0
             ? ['caption' => sprintf($this->Translate('✏️ Reference value for the feed-in limit in percent: %s kWp (your own entry, must match the PV capacity in the EMS).'), $this->fmt($this->ReadPropertyFloat('EEBusProductionNominalKw')))]
-            : ['caption' => $this->Translate('⛔ Mandatory once the control box limits feed-in: without the PV capacity SteuerboxHub reports 0 % (no feed-in) for every feed-in limit, because watts cannot be converted into percent.'), 'color' => 0xFF0000];
+            : ['caption' => '⛔ Mandatory once the control box limits feed-in: without the PV capacity SteuerboxHub reports 0 % (no feed-in) for every feed-in limit, because watts cannot be converted into percent.', 'color' => 0xFF0000];
         return $lines;
     }
 
