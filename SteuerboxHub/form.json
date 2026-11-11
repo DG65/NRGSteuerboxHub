@@ -31,26 +31,10 @@
         },
         {
           "type": "Label",
-          "caption": "EEBUS path: the NRG-Stack EEBUS Gateway (a separate module) holds the certificate, the pairing and the connection to the control box. The “EEBUS connector” from this module, which links SteuerboxHub to the gateway, attaches to it (button in the EEBUS section). The control box writes limits in watts for consumption (LPC) and feed-in (LPP), optionally time-limited. If its heartbeat is missing for more than 120 s, the failsafe limits apply until it sends a new limit or the minimum duration (2 to 24 h) has elapsed."
+          "caption": "EEBUS is handled by the separate module “NRG-Stack SteuerboxHub EEBUS”, which attaches directly to the NRG-Stack EEBUS Gateway and provides its state with SBHE_GetState."
         }
       ],
       "name": "DocPanel"
-    },
-    {
-      "type": "Select",
-      "name": "Transport",
-      "caption": "Transport path",
-      "options": [
-        {
-          "caption": "Potential-free contacts (ripple control receiver four-step scheme, §14a variant)",
-          "value": 0
-        },
-        {
-          "caption": "EEBUS (control box via the NRG-Stack EEBUS Gateway)",
-          "value": 1
-        }
-      ],
-      "onChange": "SBH_ToggleTransport($id, $Transport);"
     },
     {
       "type": "ExpansionPanel",
@@ -58,7 +42,7 @@
       "items": [
         {
           "type": "Label",
-          "caption": "Contacts path: this value applies as the consumption limit while the contact is active. EEBUS path: default for the failsafe consumption limit until the control box writes its own."
+          "caption": "This value applies as the consumption limit while the contact is active."
         },
         {
           "type": "ExpansionPanel",
@@ -193,74 +177,6 @@
       "name": "ContactsPanel"
     },
     {
-      "type": "ExpansionPanel",
-      "name": "EEBusPanel",
-      "caption": "EEBUS",
-      "items": [
-        {
-          "type": "Label",
-          "name": "EEBusConnectionLine",
-          "caption": "(calculated when the form is opened)"
-        },
-        {
-          "type": "Label",
-          "name": "EEBusStateLine",
-          "caption": "(calculated when the form is opened)"
-        },
-        {
-          "type": "Label",
-          "name": "EEBusFailsafeLine",
-          "caption": "(calculated when the form is opened)"
-        },
-        {
-          "type": "SelectInstance",
-          "name": "EEBusBridgeID",
-          "caption": "EEBUS connector (empty = automatic if there is exactly one)",
-          "validModules": [
-            "{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}"
-          ]
-        },
-        {
-          "type": "Button",
-          "caption": "Create EEBUS connector",
-          "onClick": "echo SBH_CreateEEBusBridge($id);"
-        },
-        {
-          "type": "Label",
-          "caption": "Rated values of the controlled installation that the control box queries (0 = not specified)."
-        },
-        {
-          "type": "NumberSpinner",
-          "name": "EEBusConsumptionNominalKw",
-          "caption": "Maximum power consumption of the controlled consumers",
-          "digits": 2,
-          "suffix": " kW",
-          "minimum": 0
-        },
-        {
-          "type": "Label",
-          "name": "EEBusProductionNominalLine",
-          "caption": "(calculated when the form is opened)"
-        },
-        {
-          "type": "NumberSpinner",
-          "name": "EEBusProductionNominalKw",
-          "caption": "Installed PV capacity",
-          "digits": 2,
-          "suffix": " kWp",
-          "minimum": 0
-        },
-        {
-          "type": "NumberSpinner",
-          "name": "EEBusFailsafeProductionKw",
-          "caption": "Default failsafe feed-in limit (0 = no default, unlimited during a failure)",
-          "digits": 2,
-          "suffix": " kW",
-          "minimum": 0
-        }
-      ]
-    },
-    {
       "type": "Button",
       "caption": "🔄 Force apply (without form changes)",
       "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() executed.';"
@@ -276,7 +192,7 @@
     {
       "code": 104,
       "icon": "inactive",
-      "caption": "Not configured yet: no input variable selected or no EEBUS gateway assigned."
+      "caption": "Not configured yet: no input variable selected."
     },
     {
       "code": 202,
@@ -284,24 +200,9 @@
       "caption": "A selected input variable no longer exists."
     },
     {
-      "code": 203,
-      "icon": "error",
-      "caption": "EEBUS: registration with the gateway failed (check the messages)."
-    },
-    {
-      "code": 204,
-      "icon": "error",
-      "caption": "EEBUS: control box unreachable – failsafe limit applies or applied (details in the form)."
-    },
-    {
       "code": 205,
       "icon": "error",
       "caption": "Signal lost: no update from the input variable for too long — the last known state is kept."
-    },
-    {
-      "code": 210,
-      "icon": "inactive",
-      "caption": "EEBUS: waiting for the first connection to the control box (check the pairing in the gateway)."
     }
   ]
 }

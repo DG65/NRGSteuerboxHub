@@ -72,11 +72,7 @@ function IPS_ApplyChanges(int $id): bool { $i = $GLOBALS['INST'][$id]; if (metho
 function IPS_CreateInstance(string $guid): int
 {
     $id = 20000 + count($GLOBALS['INST']);
-    if ($guid === '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}') {
-        (new TestBridge($id))->Create();
-    } else {
-        new FakeSocket($id);
-    }
+    new FakeSocket($id);
     return $id;
 }
 function IPS_ConnectInstance(int $id, int $parent): bool { $GLOBALS['INST'][$id]->parentId = $parent; return true; }
@@ -93,9 +89,9 @@ function IPS_GetInstanceListByModuleID(string $guid): array
     return $ids;
 }
 // Von Symcon erzeugte Präfix-Funktionen der beiden Modultypen.
-function SBH_ProcessEEBus(int $id, int $bridge, string $json) { return $GLOBALS['INST'][$id]->ProcessEEBus($bridge, $json); }
 function SBH_CheckEEBus(int $id) { return $GLOBALS['INST'][$id]->CheckEEBus(); }
-function SBHE_Forward(int $id, string $json): string { return $GLOBALS['INST'][$id]->Forward($json); }
+function SBHE_CheckEEBus(int $id) { return $GLOBALS['INST'][$id]->CheckEEBus(); }
+function IPS_GetObjectIDByIdent(string $ident, int $parent) { return $GLOBALS['TIMER_IDENT'][$parent][$ident] ?? false; }
 function IPS_GetLibrary(string $guid): array
 {
     $dir = $guid === '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}' ? dirname(__DIR__) : $GLOBALS['GW_DIR'];
@@ -119,7 +115,7 @@ class IPSModule
             return $text;
         }
         $c = new ReflectionClass($this);
-        while ($c->getParentClass() && $c->getParentClass()->getName() !== 'IPSModule') {
+        while ($c->getParentClass() && !is_file(dirname($c->getFileName()) . '/module.json')) {
             $c = $c->getParentClass();
         }
         $file = dirname($c->getFileName()) . '/locale.json';
@@ -296,28 +292,28 @@ class TestSBH extends SteuerboxHub
     public function GetConfigurationFormRoh() { return parent::GetConfigurationForm(); }
 }
 
-class TestBridge extends SteuerboxHubEEBUS
+class TestSBHE extends SteuerboxHubEEBUS
 {
-    public $name = 'EEBUS-Anbindung (Test)';
+    public $name = 'SteuerboxHub EEBUS (Test)';
     public $modul = '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}';
+    protected function now(): int { return $GLOBALS['NOW']; }
     public function GetConfigurationForm() { return konsoleUebersetzt(parent::GetConfigurationForm(), $this); }
     public function GetConfigurationFormRoh() { return parent::GetConfigurationForm(); }
 }
 
-/** ID der Brücke zu einer SteuerboxHub-Instanz im Prüfstand. */
-function B(int $sbhId): int { return $sbhId + 100000; }
+/** Eigene Instanz-ID als Absender beim Gateway (der EEBUS-Hub meldet sich selbst an, keine Brücke mehr). */
+function B(int $id): int { return $id; }
 
-/** SteuerboxHub ohne Elternteil; mit Gateway hängt davor eine Brücke (ID = B($id)) am Gateway. */
-function sbh(int $id, int $gateway, array $props = []): TestSBH
+/**
+ * Kontakte-Hub (SteuerboxHub) ohne Elternteil. Mit Gateway oder 'Transport' => 1 entsteht der EEBUS-Hub
+ * (SteuerboxHubEEBUS), der direkt am Gateway hängt.
+ */
+function sbh(int $id, int $gateway, array $props = [])
 {
-    if ($gateway > 0) {
-        $b = new TestBridge(B($id));
-        $b->parentId = $gateway;
-        $b->Create();
-        $b->ApplyChanges();
-        $props = ['EEBusBridgeID' => B($id)] + $props;
-    }
-    $s = new TestSBH($id);
+    $eebus = $gateway > 0 || ($props['Transport'] ?? 0) === 1;
+    unset($props['Transport']);
+    $s = $eebus ? new TestSBHE($id) : new TestSBH($id);
+    $s->parentId = $gateway;
     $s->Create();
     $s->props = array_merge($s->props, $props);
     $s->ApplyChanges();
@@ -343,13 +339,13 @@ pruefe($st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feed
 $solo->CheckEEBus();
 pruefe($solo->status === 104, 'Timer ohne Gateway: läuft ohne Fehler durch');
 $f = json_encode(json_decode($solo->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
-pruefe(strpos($f, 'Noch keine EEBUS-Anbindung') !== false && strpos($f, 'EEBUS-Anbindung anlegen') !== false && strpos($f, 'wird beim Öffnen berechnet') === false, 'Formular ohne Gateway: ℹ️-Zeile statt Platzhalter');
+pruefe(strpos($f, 'Noch kein EEBUS-Gateway zugeordnet') !== false && strpos($f, 'wird beim Öffnen berechnet') === false, 'Formular ohne Gateway: ℹ️-Zeile statt Platzhalter');
 
 echo " Anmeldung\n";
 $gw = new FakeGateway(31000);
 $sb = sbh(31001, 31000, ['Transport' => 1, 'EEBusConsumptionNominalKw' => 22.0, 'EEBusProductionNominalKw' => 10.0, 'LoadPMin' => 5.88]);
 $reg = $gw->anfragen[0] ?? [];
-pruefe(($reg['Cmd'] ?? '') === 'Register' && $reg['DataID'] === TO_GATEWAY && $reg['Sender'] === B(31001), 'Register mit DataID und Sender = Brücke');
+pruefe(($reg['Cmd'] ?? '') === 'Register' && $reg['DataID'] === TO_GATEWAY && $reg['Sender'] === B(31001), 'Register mit DataID und Sender = dieser Hub (Datenfluss)');
 $ucs = $reg['Entity']['useCases'] ?? [];
 pruefe(($reg['Entity']['type'] ?? '') === 'CEM' && count($ucs) === 2
     && array_column($ucs, 'name') === ['limitationOfPowerConsumption', 'limitationOfPowerProduction']
@@ -474,7 +470,8 @@ $gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'val
 $attrs = $sb->attrs;
 $gw->state['connected'] = false;
 vor(60);
-$neu = new TestSBH(31001);
+$neu = new TestSBHE(31001);
+$neu->parentId = 31000;
 $neu->Create();
 $neu->props = $sb->props;
 $neu->attrs = $attrs;
@@ -491,7 +488,7 @@ $gw->state['connected'] = true;
 $gw->ereignis(['Event' => 'connection', 'state' => 'connected', 'shipId' => 'Demo-ControlBox-123']);
 $form = json_decode($sb->GetConfigurationForm(), true);
 $f = json_encode($form, JSON_UNESCAPED_UNICODE);
-pruefe(strpos($f, '✅ Verbunden über Anbindung #' . B(31001) . ' und Gateway #31000') !== false && strpos($f, 'Demo-ControlBox-123') !== false, 'Formular: ✅-Zeile mit Gateway und Steuerbox');
+pruefe(strpos($f, '✅ Verbunden über Gateway #31000') !== false && strpos($f, 'Demo-ControlBox-123') !== false, 'Formular: ✅-Zeile mit Gateway und Steuerbox');
 pruefe(strpos($f, 'Ausfallzustand seit') !== false && strpos($f, 'Bezug 3,5 kW (von der Steuerbox)') !== false, 'Formular: Ausfallzustand und Herkunft der Ausfallwerte');
 pruefe(strpos($f, 'wird beim Öffnen berechnet') === false, 'Formular: keine Platzhalter mehr');
 $vis = [];
@@ -501,11 +498,10 @@ foreach ($form['elements'] as $e) {
         $vis[$e['name']] = $e['visible'] ?? true;
     }
 }
-pruefe(($vis['EEBusPanel'] ?? false) === true && ($vis['ContactsPanel'] ?? true) === false, 'Formular: nur das EEBUS-Panel sichtbar');
-$sb->ToggleTransport(0);
-pruefe(($sb->form['ContactsPanel']['visible'] ?? null) === true && ($sb->form['EEBusPanel']['visible'] ?? null) === false, 'Umschalten des Transportwegs blendet die Panels live um');
-$codes = array_column(json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/form.json'), true)['status'], 'code');
-pruefe(!array_diff([102, 104, 202, 203, 204, 205, 210], $codes), 'Jeder Statuscode hat einen Eintrag in form.json');
+pruefe(($vis['EEBusPanel'] ?? false) === true && !isset($vis['ContactsPanel']) && !isset($vis['EEBusBridgeID']), 'Formular: EEBUS-Hub zeigt nur das EEBUS-Panel, keine Anbindungs-Auswahl');
+$codesE = array_column(json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHubEEBUS/form.json'), true)['status'], 'code');
+$codesK = array_column(json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/form.json'), true)['status'], 'code');
+pruefe(!array_diff([102, 104, 203, 204, 210], $codesE) && !array_diff([102, 104, 202, 205], $codesK), 'Jeder Statuscode hat einen Eintrag in der form.json seines Moduls');
 
 echo " Zweisprachigkeit (Deutsch/Englisch)\n";
 $deutsch = '/[äöüÄÖÜß]|\b(und|nicht|ist|wird|bei|mit|von|für|keine?|Steuerbox|Anbindung|Ausfall\w*|Grenze|Bezug|Einspeisung\w*|Formular|Verbunden|Zustand|Gleichzeitigkeit\w*)\b/u';
@@ -521,7 +517,7 @@ $sammle = function ($node) use (&$sammle): array {
     }
     return $out;
 };
-$brueckeInst = $GLOBALS['INST'][B(31001)];
+$brueckeInst = sbh(35100, 0, []);   // Kontakte-Hub, das zweite Modul der Bibliothek
 IPSModule::$locale = 'en';
 $enTexte  = array_merge($sammle(json_decode($sb->GetConfigurationForm(), true)), $sammle(json_decode($brueckeInst->GetConfigurationForm(), true)));
 $enRueck  = $sb->CalculateGZF(4, 0.0);
@@ -540,11 +536,11 @@ $deZeit   = $zeit->invoke($sb, mktime(14, 30, 0, 11, 5, 2026));
 $deZahl   = $zahl->invoke($sb, 4.2);
 
 $deutschImEn = array_values(array_filter($enTexte, function ($t) use ($deutsch, $neutral) { return !$neutral($t) && preg_match($deutsch, $t); }));
-pruefe($deutschImEn === [], 'Englisches Formular (SteuerboxHub und Anbindung): kein deutscher Text' . ($deutschImEn ? ' — gefunden: ' . mb_substr($deutschImEn[0], 0, 70) : ''));
+pruefe($deutschImEn === [], 'Englisches Formular (beide Module): kein deutscher Text' . ($deutschImEn ? ' — gefunden: ' . mb_substr($deutschImEn[0], 0, 70) : ''));
 pruefe(strpos(implode('|', $enTexte), '📖 Documentation & Help') !== false && strpos(implode('|', $enTexte), 'Potential-free contacts') !== false, 'Englisches Formular: Dokumentations- und Kontakte-Panel englisch');
 $unuebersetzt = array_values(array_filter(array_unique($enTexte), function ($t) use ($deTexte, $neutral) { return !$neutral($t) && in_array($t, $deTexte, true) && preg_match('/\p{L}+\s+\p{L}+\s+\p{L}+/u', $t); }));
 pruefe($unuebersetzt === [], 'Deutsches Formular: jeder englische Quelltext ist übersetzt' . ($unuebersetzt ? ' — fehlt: ' . mb_substr($unuebersetzt[0], 0, 70) : ''));
-pruefe(strpos($enForm, '✅ Connected via connector #') !== false && strpos($enForm, 'Failsafe') === false || strpos($enForm, 'Controlled by the control box') !== false, 'Englisches Formular: Statuszeilen englisch (Verbindung, Zustand)');
+pruefe(strpos($enForm, '✅ Connected via gateway #') !== false && (strpos($enForm, 'Controlled by the control box') !== false || strpos($enForm, 'Failsafe state since') !== false), 'Englisches Formular: Statuszeilen englisch (Verbindung, Zustand)');
 pruefe(strpos($enRueck, '13.02 kW') !== false && strpos($enRueck, 'simultaneity factor') !== false && strpos($enRueck, 'Apply Changes') !== false && !preg_match($deutsch, $enRueck), 'Englisch: GZF-Rückmeldung mit Dezimalpunkt und „Apply Changes“');
 pruefe(strpos($enReset, 'Apply Changes') !== false && !preg_match($deutsch, $enReset), 'Englisch: Rückmeldung „Reset to default“');
 pruefe($enLog !== '' && strpos($enLog, 'EEBUS: consumption limit 5 kW active') !== false && !preg_match($deutsch, $enLog), 'Englisch: Protokollmeldungen englisch (Bezugsgrenze 5 kW)');
@@ -557,12 +553,14 @@ $fehlt = [];
 $deutschCode = [];
 foreach (['SteuerboxHub', 'SteuerboxHubEEBUS'] as $mod) {
     $locDe = json_decode(file_get_contents("$wurzel/$mod/locale.json"), true)['translations']['de'] ?? [];
-    foreach (token_get_all(file_get_contents("$wurzel/$mod/module.php")) as $t) {
-        if (is_array($t) && $t[0] === T_CONSTANT_ENCAPSED_STRING) {
-            $str = stripcslashes(substr($t[1], 1, -1));
-            if ($neutral($str) || !preg_match('/\p{L}.*\s.*\p{L}|[•✅⚠ℹ⛔🆕👋💬🧪🧡☕🪟🙈↩✏🔄]/u', $str)) { continue; }
-            if (preg_match($deutsch, $str)) { $deutschCode[] = "$mod: " . mb_substr($str, 0, 50); }
-            if (!isset($locDe[$str]) && !preg_match('/^(type|name|caption)\b/', $str)) { $fehlt[] = "$mod: " . mb_substr($str, 0, 50); }
+    foreach (["$wurzel/$mod/module.php", "$wurzel/libs/SteuerboxHubBase.php"] as $quelle) {
+        foreach (token_get_all(file_get_contents($quelle)) as $t) {
+            if (is_array($t) && $t[0] === T_CONSTANT_ENCAPSED_STRING) {
+                $str = stripcslashes(substr($t[1], 1, -1));
+                if ($neutral($str) || !preg_match('/\p{L}.*\s.*\p{L}|[•✅⚠ℹ⛔🆕👋💬🧪🧡☕🪟🙈↩✏🔄]/u', $str)) { continue; }
+                if (preg_match($deutsch, $str)) { $deutschCode[] = "$mod: " . mb_substr($str, 0, 50); }
+                if (!isset($locDe[$str]) && !preg_match('/^(type|name|caption)\b/', $str)) { $fehlt[] = "$mod: " . mb_substr($str, 0, 50); }
+            }
         }
     }
     $formFile = "$wurzel/$mod/form.json";
@@ -592,34 +590,41 @@ pruefe($randLeer === [], 'locale.json: kein Schlüssel mit Leerzeichen am Rand (
 $rohSbh = json_decode($sb->GetConfigurationFormRoh(), true);
 $rohBr  = json_decode($brueckeInst->GetConfigurationFormRoh(), true);
 $rohTexte = array_merge($sammle($rohSbh), $sammle($rohBr));
-$formStatisch = $sammle(json_decode(file_get_contents($wurzel . '/SteuerboxHub/form.json'), true));
+$formStatisch = array_merge($sammle(json_decode(file_get_contents($wurzel . '/SteuerboxHub/form.json'), true)), $sammle(json_decode(file_get_contents($wurzel . '/SteuerboxHubEEBUS/form.json'), true)));
 $ersetzt = ['(calculated when the form is opened)', '✅ ApplyChanges() executed.'];   // Platzhalter und Popup-Texte übersetzt das Modul selbst (Review 25)
 $nichtRoh = array_values(array_filter($formStatisch, function ($t) use ($rohTexte, $neutral, $ersetzt) { return !$neutral($t) && !in_array($t, $ersetzt, true) && !in_array($t, $rohTexte, true); }));
 pruefe($nichtRoh === [] && in_array('📖 Documentation & Help', $rohTexte, true), 'Store-Review 25: statische Captions bleiben im Roh-Formular englisch, das Modul übersetzt sie nicht selbst' . ($nichtRoh ? ' — ' . mb_substr($nichtRoh[0], 0, 60) : ''));
-pruefe(strpos(file_get_contents($wurzel . '/SteuerboxHub/module.php'), 'translateForm') === false, 'Store-Review 25: keine Formular-Übersetzungsschleife im Code');
+pruefe(strpos(file_get_contents($wurzel . '/libs/SteuerboxHubBase.php'), 'translateForm') === false, 'Store-Review 25: keine Formular-Übersetzungsschleife im Code');
 
 // Stolperstein 24: der 10-s-Timer ruft kein Translate() auf.
 IPSModule::$translateCalls = 0;
 $sb->CheckEEBus();
 pruefe(IPSModule::$translateCalls <= 2, 'Timerlauf CheckEEBus: höchstens 2 Translate()-Aufrufe (gemessen: ' . IPSModule::$translateCalls . ')');
 
-echo " Brücke (EEBUS-Anbindung)\n";
-pruefe($GLOBALS['INST'][B(31001)]->status === 102, 'Brücke am Gateway: Status 102');
-$lose = new TestBridge(36000);
-$lose->Create();
-$lose->ApplyChanges();
-pruefe($lose->status === 104, 'Brücke ohne Gateway: Status 104');
-$vorher = $sb->GetState()['loadPMin'];
-$fremd = sbh(36001, 0, ['Transport' => 1, 'EEBusBridgeID' => 36000]);
+echo " EEBUS-Hub: Datenfluss zum Gateway (Store-Review 11.11.2026)\n";
+pruefe($sb->status === 102, 'EEBUS-Hub am Gateway: Status 102');
+$lose = sbh(36000, 0, ['Transport' => 1]);
+pruefe($lose->status === 104, 'EEBUS-Hub ohne Gateway: Status 104');
+$fremd = sbh(36001, 31000, ['Transport' => 1]);
 $gw->ereignis(lpcWrite(B(31001), [['limitId' => 0, 'isLimitActive' => true, 'value' => ['number' => 9999, 'scale' => 0]]]));
-pruefe($fremd->GetState()['loadDimmActive'] === false && $fremd->status === 104, 'Ereignis über fremde Brücke erreicht die andere SteuerboxHub-Instanz nicht');
-pruefe($sb->GetState()['loadPMin'] === 9.999, 'Eigene Instanz bekommt es (9,999 kW)');
-$gws = count(IPS_GetInstanceListByModuleID(GW_ID));
-$neuB = $fremd->CreateEEBusBridge();
-$nb = $fremd->form['EEBusBridgeID']['value'] ?? 0;
-pruefe($nb > 0 && ($GLOBALS['INST'][$nb]->modul ?? '') === '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}' && strpos($neuB, 'angelegt') !== false && strpos($neuB, 'Übernehmen') !== false, '„EEBUS-Anbindung anlegen“: Brücke angelegt, in die Maske eingetragen, Hinweis auf „Übernehmen“');
-pruefe($gws > 1 ? ($GLOBALS['INST'][$nb]->parentId === 0 && strpos($neuB, 'Mehrere EEBUS-Gateways') !== false) : true, 'Bei mehreren Gateways nicht raten, sondern Hinweis');
-
+pruefe($fremd->GetState()['loadDimmActive'] === false && $lose->GetState()['loadDimmActive'] === false, 'Ereignis (Target) erreicht nur den angemeldeten Hub, nicht die anderen');
+pruefe($sb->GetState()['loadPMin'] === 9.999, 'Der angemeldete Hub bekommt es (9,999 kW)');
+$aufrufe = function (string $datei, string $praefix): array {
+    $treffer = [];
+    $tok = token_get_all(file_get_contents($datei));
+    foreach ($tok as $i => $t) {
+        if (is_array($t) && $t[0] === T_STRING && preg_match($praefix, $t[1])) {
+            $n = $i + 1;
+            while (isset($tok[$n]) && is_array($tok[$n]) && $tok[$n][0] === T_WHITESPACE) { $n++; }
+            if (($tok[$n] ?? '') === '(') { $treffer[] = $t[1]; }
+        }
+    }
+    return $treffer;
+};
+$wurzel0 = dirname(__DIR__);
+pruefe($aufrufe($wurzel0 . '/SteuerboxHub/module.php', '/^SBHE_/') === [] && $aufrufe($wurzel0 . '/SteuerboxHubEEBUS/module.php', '/^SBH_/') === [] && $aufrufe($wurzel0 . '/libs/SteuerboxHubBase.php', '/^SBHE?_/') === [],
+    'Store-Review: die beiden Module rufen keine Funktionen des anderen auf, der Austausch läuft über den Datenfluss');
+pruefe(strpos((string) file_get_contents($wurzel0 . '/SteuerboxHubEEBUS/module.php'), 'SendDataToParent') !== false && strpos((string) file_get_contents($wurzel0 . '/SteuerboxHubEEBUS/module.php'), 'function ReceiveData') !== false, 'EEBUS-Hub spricht mit dem Gateway über SendDataToParent und ReceiveData');
 
 echo " Einspeisung ohne Nennleistung\n";
 $gw2 = new FakeGateway(32000);
@@ -638,14 +643,21 @@ pruefe($abg->status === 203 && count(array_filter($abg->log, function ($l) { ret
 $gw3->registerAntwort = null;
 $abg->CheckEEBus();
 pruefe($abg->status === 210, 'Timer wiederholt die Anmeldung');
-$abg->props['Transport'] = 0;
-$abg->ApplyChanges();
-pruefe(end($gw3->anfragen)['Cmd'] === 'Unregister' && $abg->status === 104, 'Kontakte gewählt: beim Gateway abgemeldet');
-$ohne->props['Transport'] = 0;
-$ohne->props['LoadContactVarID'] = 0;
-$ohne->ApplyChanges();
-$st = $ohne->GetState();
-pruefe($st['source'] === 'contacts' && $st['feedInDimmActive'] === false && $st['feedInLimitPercent'] === 100.0, 'Zurück auf Kontakte: keine EEBUS-Grenze bleibt hängen');
+
+echo " Altinstanz aus 0.2 bis 0.5 (Kontakte-Hub mit Transport EEBUS)\n";
+$alt = sbh(34100, 0, []);
+$alt->props['Transport'] = 1;
+$alt->ApplyChanges();
+$st = $alt->GetState();
+pruefe($alt->status === 104 && $st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feedInLimitPercent'] === 100.0 && $st['contractVersion'] === '1.0', 'Altinstanz auf EEBUS: Status 104 (neutral), keine Begrenzung, Vertrag unverändert');
+$f = json_encode(json_decode($alt->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
+pruefe(strpos($f, 'steht noch auf dem früheren Transportweg EEBUS') !== false && strpos($f, 'SBHE_GetState') !== false, 'Altinstanz: Formular weist auf das neue EEBUS-Modul hin');
+$alt->CheckEEBus();
+pruefe($alt->status === 104, 'Altlast-Timer (SBH_CheckEEBus) läuft ohne Wirkung und ohne Fehler');
+$alt->props['Transport'] = 0;
+$alt->ApplyChanges();
+$f = json_encode(json_decode($alt->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
+pruefe(strpos($f, 'steht noch auf dem früheren Transportweg') === false && $alt->GetState()['source'] === 'contacts', 'Zurück auf Kontakte: Hinweis weg, Quelle contacts');
 
 
 echo " Formular-Konvention\n";
@@ -655,11 +667,11 @@ $caps = array_map(function ($e) { return $e['caption'] ?? ($e['name'] ?? $e['typ
 $idx = function (string $needle) use ($caps) { foreach ($caps as $i => $c) { if (strpos((string) $c, $needle) !== false) { return $i; } } return -1; };
 pruefe($idx('Wozu dieses Modul') === 0 && $idx('Neu bis Version') === 1 && $idx('Dokumentation') === 2, 'Reihenfolge: Wozu → Neu bis Version → Dokumentation & Hilfe');
 pruefe($idx('Rückmeldungen') === count($caps) - 2 && $idx('Über dieses Modul') === count($caps) - 1, 'Rückmeldungen und „Über dieses Modul“ am Ende');
-pruefe(strpos($caps[1], '0.5.0') !== false, 'News-Panel nennt die höchste neue Version (0.5.0)');
+pruefe(strpos($caps[1], '0.6.0') !== false, 'News-Panel nennt die höchste neue Version (0.6.0)');
 $lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
 $doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($doc, 'SteuerboxHub Version 0.5.0 (Build 7)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+pruefe(strpos($doc, 'SteuerboxHub Version 0.6.0 (Build 8)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
 $fh = json_encode($form['elements'][count($caps) - 2], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($fh, "echo 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795'") !== false && strpos($fh, 'Zum Forums-Thread') < strpos($fh, 'GitHub'), 'Rückmeldungen: Forums-Thread zuerst, GitHub-Issues als zweiter Knopf');
 $fk->AckPurposeIntro();
@@ -667,52 +679,58 @@ $fk->AckNews();
 $fk->AckForumHint();
 $caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
-pruefe($fk->attrs['SeenNews'] === '0.5.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.5.0) und blendet sofort aus');
-$fk->attrs['SeenNews'] = '0.2.0';
+pruefe($fk->attrs['SeenNews'] === '0.6.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.6.0) und blendet sofort aus');
+$fk->attrs['SeenNews'] = '0.4.0';
 $caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 $news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($caps3[0], 'Neu bis Version 0.5.0') !== false && strpos($news, 'Version 0.2.0:') === false && strpos($news, 'Version 0.3.0:') !== false, 'Wer 0.2.0 kannte, sieht nur die Neuerungen ab 0.3.0');
+pruefe(strpos($caps3[0], 'Neu bis Version 0.6.0') !== false && strpos($news, 'Version 0.4.0:') === false && strpos($news, 'Version 0.5.0:') !== false, 'Wer 0.4.0 kannte, sieht nur die Neuerungen ab 0.5.0');
 
 echo " Formular: Aufbau\n";
-$fa = sbh(35002, 0, ['Transport' => 0]);
-$panelNamen = function (TestSBH $x): array {
+$panelNamen = function ($x, array $erlaubt): array {
     $r = [];
     foreach (json_decode($x->GetConfigurationForm(), true)['elements'] as $e) {
-        if (isset($e['name']) && in_array($e['name'], ['PminPanel', 'ContactsPanel', 'EEBusPanel'], true)) { $r[] = $e; }
+        if (isset($e['name']) && in_array($e['name'], $erlaubt, true)) { $r[] = $e; }
     }
     return $r;
 };
 $namen = function (array $ps) { return array_map(function ($e) { return $e['name']; }, $ps); };
-pruefe($namen($panelNamen($fa)) === ['PminPanel', 'ContactsPanel', 'EEBusPanel'], 'Aufbau: ohne Einstellung Standardreihenfolge');
-$el = json_decode($fa->GetConfigurationForm(), true)['elements'];
-$caps = array_map(function ($e) { return $e['caption'] ?? ''; }, $el);
-$iA = -1; foreach ($caps as $i => $c) { if (strpos($c, 'Formular: Aufbau') !== false) { $iA = $i; } }
-pruefe($iA === count($caps) - 3 && strpos($caps[$iA + 1], 'Rückmeldungen') !== false && ($el[$iA]['expanded'] ?? true) === false, 'Aufbau-Panel: eingeklappt, direkt vor Rückmeldungen und Lizenz');
-pruefe(strpos(json_encode($el[$iA], JSON_UNESCAPED_UNICODE), '"save":true') !== false && count($el[$iA]['items'][2]['values'] ?? $el[$iA]['items'][count($el[$iA]['items']) - 2]['values']) === 3, 'Aufbau-Liste: Schlüssel gespeichert, ein Eintrag je Fachpanel');
-$fa->props['FormLayout'] = json_encode([
-    ['Key' => 'eebus', 'Opened' => true, 'Pos' => 1],
-    ['Key' => 'pmin', 'Closed' => true, 'Pos' => 2],
-    ['Key' => 'contacts', 'Hidden' => true, 'Opened' => true, 'Pos' => 3],
-]);
-$ps = $panelNamen($fa);
-pruefe($namen($ps) === ['EEBusPanel', 'PminPanel', 'ContactsPanel'], 'Aufbau: Position bestimmt die Reihenfolge');
-pruefe(($ps[0]['expanded'] ?? false) === true && ($ps[1]['expanded'] ?? true) === false, 'Aufbau: Aufgeklappt und Zugeklappt wirken');
-pruefe(($ps[2]['visible'] ?? true) === false && count($ps[2]['items']) > 0, 'Aufbau: Ausgeblendet = visible:false, Felder bleiben im Formular');
-$ueberschrift = json_encode(json_decode($fa->GetConfigurationForm(), true)['elements'], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($ueberschrift, 'Formular: Aufbau (1 ausgeblendet)') !== false && strpos($ueberschrift, '🙈 Ausgeblendet: Potentialfreie Kontakte') !== false, 'Aufbau: Überschrift nennt die Zahl, eine Zeile nennt die ausgeblendeten Bereiche');
-$fa->props['FormLayout'] = json_encode([['Key' => 'unbekannt', 'Hidden' => true, 'Pos' => 1], ['Key' => 'pmin', 'Pos' => 99]]);
-pruefe($namen($panelNamen($fa)) === ['ContactsPanel', 'EEBusPanel', 'PminPanel'], 'Aufbau: unbekannter Schlüssel wird ignoriert, fehlende fallen auf Standardposition');
-$fa->props['FormLayout'] = 'kaputt';
-pruefe($namen($panelNamen($fa)) === ['PminPanel', 'ContactsPanel', 'EEBusPanel'], 'Aufbau: ungültige Einstellung fällt auf Standard zurück');
-$fa->props['FormLayout'] = json_encode([['Key' => 'contacts', 'Hidden' => true], ['Key' => 'eebus', 'Closed' => true, 'Opened' => true, 'Hidden' => true]]);
-$ps = $panelNamen($fa);
-pruefe(($ps[1]['visible'] ?? true) === false && ($ps[2]['visible'] ?? true) === false, 'Aufbau: bei Widerspruch gewinnt Ausgeblendet');
-$fa->props['Transport'] = 0;
-$fa->ToggleTransport(0);
-pruefe(($fa->form['ContactsPanel']['visible'] ?? null) === false, 'Aufbau: Umschalten des Transportwegs blendet ein ausgeblendetes Panel nicht wieder ein');
-$txt = $fa->ResetFormLayout();
-$zeilen = json_decode($fa->form['FormLayout']['values'] ?? '[]', true);
-pruefe(count($zeilen) === 3 && !array_filter($zeilen, function ($z) { return $z['Opened'] || $z['Closed'] || $z['Hidden']; }) && array_column($zeilen, 'Key') === ['pmin', 'contacts', 'eebus'] && strpos($txt, 'Übernehmen') !== false, 'Aufbau: Zurücksetzen setzt alles auf Standard und nennt „Übernehmen“');
+$modulAufbau = [
+    'Kontakte-Hub' => [sbh(35002, 0, []), ['PminPanel', 'ContactsPanel'], 'contacts', 'ContactsPanel', 'Potentialfreie Kontakte'],
+    'EEBUS-Hub'    => [sbh(35003, 0, ['Transport' => 1]), ['PminPanel', 'EEBusPanel'], 'eebus', 'EEBusPanel', 'EEBUS'],
+];
+foreach ($modulAufbau as $modul => [$fa, $panelListe, $schluessel, $panelName, $label]) {
+    $andere = $panelListe[0] === 'PminPanel' ? $panelListe[1] : $panelListe[0];
+    $pn = function () use ($panelNamen, $fa, $panelListe) { return $panelNamen($fa, $panelListe); };
+    pruefe($namen($pn()) === $panelListe, "Aufbau ($modul): ohne Einstellung Standardreihenfolge");
+    $el = json_decode($fa->GetConfigurationForm(), true)['elements'];
+    $caps = array_map(function ($e) { return $e['caption'] ?? ''; }, $el);
+    $iA = -1; foreach ($caps as $i => $c) { if (strpos($c, 'Formular: Aufbau') !== false) { $iA = $i; } }
+    pruefe($iA === count($caps) - 3 && strpos($caps[$iA + 1], 'Rückmeldungen') !== false && ($el[$iA]['expanded'] ?? true) === false, "Aufbau ($modul): Panel eingeklappt, direkt vor Rückmeldungen und Lizenz");
+    $liste = array_values(array_filter($el[$iA]['items'], function ($i) { return ($i['name'] ?? '') === 'FormLayout'; }))[0] ?? [];
+    pruefe(strpos(json_encode($liste, JSON_UNESCAPED_UNICODE), '"save":true') !== false && count($liste['values'] ?? []) === 2, "Aufbau ($modul): Schlüssel gespeichert, ein Eintrag je Fachpanel");
+    $fa->props['FormLayout'] = json_encode([
+        ['Key' => $schluessel, 'Opened' => true, 'Pos' => 1],
+        ['Key' => 'pmin', 'Closed' => true, 'Pos' => 2],
+    ]);
+    $ps = $pn();
+    pruefe($namen($ps) === [$panelName, 'PminPanel'], "Aufbau ($modul): Position bestimmt die Reihenfolge");
+    pruefe(($ps[0]['expanded'] ?? false) === true && ($ps[1]['expanded'] ?? true) === false, "Aufbau ($modul): Aufgeklappt und Zugeklappt wirken");
+    $fa->props['FormLayout'] = json_encode([['Key' => $schluessel, 'Hidden' => true, 'Opened' => true, 'Pos' => 1]]);
+    $versteckt = array_values(array_filter($pn(), function ($e) use ($panelName) { return $e['name'] === $panelName; }))[0] ?? [];
+    pruefe(($versteckt['visible'] ?? true) === false && count($versteckt['items'] ?? []) > 0, "Aufbau ($modul): Ausgeblendet = visible:false, Felder bleiben im Formular");
+    $ueberschrift = json_encode(json_decode($fa->GetConfigurationForm(), true)['elements'], JSON_UNESCAPED_UNICODE);
+    pruefe(strpos($ueberschrift, 'Formular: Aufbau (1 ausgeblendet)') !== false && strpos($ueberschrift, '🙈 Ausgeblendet: ' . $label) !== false, "Aufbau ($modul): Überschrift nennt die Zahl, eine Zeile nennt den ausgeblendeten Bereich");
+    $fa->props['FormLayout'] = json_encode([['Key' => 'unbekannt', 'Hidden' => true, 'Pos' => 1], ['Key' => 'pmin', 'Pos' => 99]]);
+    pruefe($namen($pn()) === [$andere, 'PminPanel'], "Aufbau ($modul): unbekannter Schlüssel wird ignoriert, fehlende fallen auf Standardposition");
+    $fa->props['FormLayout'] = 'kaputt';
+    pruefe($namen($pn()) === $panelListe, "Aufbau ($modul): ungültige Einstellung fällt auf Standard zurück");
+    $fa->props['FormLayout'] = json_encode([['Key' => $schluessel, 'Closed' => true, 'Opened' => true, 'Hidden' => true]]);
+    $versteckt = array_values(array_filter($pn(), function ($e) use ($panelName) { return $e['name'] === $panelName; }))[0] ?? [];
+    pruefe(($versteckt['visible'] ?? true) === false, "Aufbau ($modul): bei Widerspruch gewinnt Ausgeblendet");
+    $txt = $fa->ResetFormLayout();
+    $zeilen = json_decode($fa->form['FormLayout']['values'] ?? '[]', true);
+    pruefe(count($zeilen) === 2 && !array_filter($zeilen, function ($z) { return $z['Opened'] || $z['Closed'] || $z['Hidden']; }) && array_column($zeilen, 'Key') === ['pmin', $schluessel] && strpos($txt, 'Übernehmen') !== false, "Aufbau ($modul): Zurücksetzen setzt alles auf Standard und nennt „Übernehmen“");
+}
 
 $txt = $fk->CalculateGZF(4, 0.0);
 pruefe(($fk->form['LoadPMin']['value'] ?? 0) === 13.02 && strpos($txt, '13,02 kW') !== false && strpos($txt, 'Übernehmen') !== false, 'GZF-Rechenhilfe: n = 4 → 13,02 kW, Rückmeldung nennt „Übernehmen“');
@@ -721,13 +739,22 @@ pruefe($mj['aliases'] === ['NRG-Stack SteuerboxHub'], 'Genau ein Alias (ein Eint
 // SDK-Lebenszyklus-Funktionen haben eine von Symcon vorgegebene Signatur und werden nicht als SBH_-Funktion erzeugt.
 $sdk = ['Create', 'ApplyChanges', 'Destroy', 'MessageSink', 'ReceiveData', 'GetConfigurationForm', 'RequestAction'];
 $verstoesse = [];
-foreach ((new ReflectionClass(SteuerboxHub::class))->getMethods(ReflectionMethod::IS_PUBLIC) as $m) {
-    if ($m->getDeclaringClass()->getName() !== SteuerboxHub::class || in_array($m->getName(), $sdk, true)) { continue; }
-    foreach ($m->getParameters() as $p) {
-        if ($p->isOptional() || !$p->hasType()) { $verstoesse[] = $m->getName() . '($' . $p->getName() . ')'; }
+foreach ([SteuerboxHub::class, SteuerboxHubEEBUS::class, SteuerboxHubBase::class] as $klasse) {
+    foreach ((new ReflectionClass($klasse))->getMethods(ReflectionMethod::IS_PUBLIC) as $m) {
+        if ($m->getDeclaringClass()->getName() !== $klasse || in_array($m->getName(), $sdk, true)) { continue; }
+        foreach ($m->getParameters() as $p) {
+            if ($p->isOptional() || !$p->hasType()) { $verstoesse[] = $klasse . '::' . $m->getName() . '($' . $p->getName() . ')'; }
+        }
     }
 }
-pruefe($verstoesse === [], 'Öffentliche SBH_-Funktionen: keine Standardwerte, alle Parameter typisiert (Stolperstein 8/20)' . ($verstoesse ? ': ' . implode(', ', $verstoesse) : ''));
+pruefe($verstoesse === [], 'Öffentliche SBH_/SBHE_-Funktionen: keine Standardwerte, alle Parameter typisiert (Stolperstein 8/20)' . ($verstoesse ? ': ' . implode(', ', $verstoesse) : ''));
+$k1 = sbh(35200, 0, []);
+$k2 = sbh(35201, 0, ['Transport' => 1]);
+$kontrakt = ['contractVersion', 'source', 'loadDimmActive', 'loadPMin', 'loadSince', 'feedInDimmActive', 'feedInLimitPercent', 'feedInSince'];
+$t1 = $k1->GetState();
+$t2 = $k2->GetState();
+pruefe(array_keys($t1) === $kontrakt && array_keys($t2) === $kontrakt && array_map('gettype', $t1) === array_map('gettype', $t2) && $t1['source'] === 'contacts' && $t2['source'] === 'eebus' && $t1['contractVersion'] === '1.0' && $t2['contractVersion'] === '1.0',
+    'Vertrag 1.0: SBH_GetState (Kontakte) und SBHE_GetState (EEBUS) liefern dieselben Felder und Typen');
 
 echo " Ohne Gateway keine Begrenzung, neues Gateway beginnt neu (Live-Fund 27.10.2026)\n";
 $gw7 = new FakeGateway(37000);
@@ -740,18 +767,14 @@ $gw7->ereignis(['Event' => 'connection', 'state' => 'disconnected']);
 vor(4000);
 $r7->CheckEEBus();
 pruefe($r7->GetState()['loadPMin'] === 13.02 && $r7->status === 204, 'Ausgangslage: Steuerbox weg, Ausfallgrenze 13,02 kW');
-$r7->props['EEBusBridgeID'] = 999999;
+$r7->parentId = 0;
 $r7->ApplyChanges();
 $st = $r7->GetState();
-pruefe($st['loadDimmActive'] === false && $st['feedInDimmActive'] === false && $r7->status === 104, 'Anbindung entfernt: keine Begrenzung, Status 104 (nicht mehr „Ausfall bei nicht konfiguriert“)');
+pruefe($st['loadDimmActive'] === false && $st['feedInDimmActive'] === false && $r7->status === 104, 'Gateway entfernt: keine Begrenzung, Status 104 (nicht mehr „Ausfall bei nicht konfiguriert“)');
 $f = json_encode(json_decode($r7->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
-pruefe(strpos($f, 'Ohne EEBUS-Anbindung mit Gateway gilt keine Begrenzung') !== false && strpos($f, 'Ausfallzustand seit') === false, 'Formular sagt dasselbe');
+pruefe(strpos($f, 'Ohne EEBUS-Gateway gilt keine Begrenzung') !== false && strpos($f, 'Ausfallzustand seit') === false, 'Formular sagt dasselbe');
 $gw8 = new FakeGateway(38000);
-$b8 = new TestBridge(138001);
-$b8->parentId = 38000;
-$b8->Create();
-$b8->ApplyChanges();
-$r7->props['EEBusBridgeID'] = 138001;
+$r7->parentId = 38000;
 $r7->ApplyChanges();
 $z = json_decode($r7->attrs['EEBusState'], true);
 pruefe($z['mode'] === 'unpaired' && $z['limits'][0]['active'] === false && $z['gateway'] === 38000 && $r7->status === 210, 'Anderes Gateway: früherer Zustand verworfen, wartet auf erste Verbindung');
@@ -767,7 +790,7 @@ pruefe(strpos((string) file_get_contents(dirname(__DIR__) . '/SteuerboxHub/modul
 $mj = json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHub/module.json'), true);
 pruefe($mj['parentRequirements'] === [] && $mj['implemented'] === [], 'SteuerboxHub ohne parentRequirements (kein Balken „benötigt eine übergeordnete Instanz“)');
 $bj = json_decode(file_get_contents(dirname(__DIR__) . '/SteuerboxHubEEBUS/module.json'), true);
-pruefe($bj['parentRequirements'] === [TO_GATEWAY] && $bj['implemented'] === [TO_CHILD] && $bj['prefix'] === 'SBHE' && count($bj['aliases']) === 1, 'Brücke trägt die Kind-Schnittstelle des EEBUS-Gateways, ein Alias');
+pruefe($bj['parentRequirements'] === [TO_GATEWAY] && $bj['implemented'] === [TO_CHILD] && $bj['prefix'] === 'SBHE' && $bj['aliases'] === ['NRG-Stack SteuerboxHub EEBUS'], 'EEBUS-Hub trägt die Kind-Schnittstelle des EEBUS-Gateways, ein Alias');
 
 // ---------------------------------------------------------------------------
 $gwArg = array_search('--gateway', $argv, true);
@@ -787,7 +810,7 @@ if ($gwArg !== false) {
     $kind = sbh(50003, 50002, ['Transport' => 1, 'EEBusProductionNominalKw' => 10.0]);
 
     $anm = json_decode($egw->attrs['Anmeldungen'], true);
-    pruefe(isset($anm[(string) B(50003)]) && count($anm[(string) B(50003)]['useCases']) === 2, 'Gateway hat die Anmeldung der Brücke gespeichert');
+    pruefe(isset($anm[(string) B(50003)]) && count($anm[(string) B(50003)]['useCases']) === 2, 'Gateway hat die Anmeldung des EEBUS-Hubs gespeichert');
     pruefe(json_decode($kind->attrs['EEBusState'], true)['entity'] === 1, 'Gateway vergibt Entität 1');
     $nichtUebernommen = array_filter($kind->log, function ($l) { return strpos($l, 'nicht übernommen') !== false; });
     pruefe($nichtUebernommen === [], 'Alle Feature-Daten vom Gateway angenommen' . ($nichtUebernommen ? ': ' . implode(' | ', $nichtUebernommen) : ''));

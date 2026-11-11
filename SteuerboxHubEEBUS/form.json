@@ -1,0 +1,160 @@
+{
+  "elements": [
+    {
+      "type": "ExpansionPanel",
+      "caption": "📖 Documentation & Help",
+      "expanded": false,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "SteuerboxHub EEBUS only captures the §14a EnWG limits from the control box and publishes them via SBHE_GetState. It does not control anything itself; the EMS derives setpoints from it for the device hubs."
+        },
+        {
+          "type": "Label",
+          "caption": "Two independent axes: “Load” (limiting controllable consumers such as wallbox, heat pump, storage) and “Feed-in” (reducing PV feed-in; self-consumption and battery charging are not affected)."
+        },
+        {
+          "type": "Label",
+          "caption": "How it works: the NRG-Stack EEBUS Gateway (a separate module) holds the certificate, the pairing and the connection to the control box. This module attaches directly to it: choose the gateway as the parent of this instance (“Change gateway” above). The control box writes limits in watts for consumption (LPC) and feed-in (LPP), optionally time-limited. If its heartbeat is missing for more than 120 s, the failsafe limits apply until it sends a new limit or the minimum duration (2 to 24 h) has elapsed."
+        }
+      ],
+      "name": "DocPanel"
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Minimum power under §14a (Pmin)",
+      "items": [
+        {
+          "type": "Label",
+          "caption": "This value is the default for the failsafe consumption limit until the control box writes its own."
+        },
+        {
+          "type": "ExpansionPanel",
+          "caption": "Simultaneity factor calculator (BNetzA formula)",
+          "items": [
+            {
+              "type": "Label",
+              "caption": "Pmin,14a = 4.2 kW + (n-1) × GZF × 4.2 kW — for several controllable consumption devices (e.g. wallbox, heat pump, air conditioner, storage above 4.2 kW) on this contact. If the value is 0, the simultaneity factor (GZF) is determined automatically from the BNetzA table (0.80 for 2 devices, falling to 0.45 from 9 devices)."
+            },
+            {
+              "type": "NumberSpinner",
+              "name": "GZFConsumerCount",
+              "caption": "Number of controllable consumers (n)",
+              "minimum": 1
+            },
+            {
+              "type": "NumberSpinner",
+              "name": "GZFFactor",
+              "caption": "Simultaneity factor (0 = automatic from table)",
+              "digits": 2,
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "Button",
+              "caption": "Calculate and apply Pmin",
+              "onClick": "echo SBHE_CalculateGZF($id, $GZFConsumerCount, $GZFFactor);"
+            }
+          ]
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "LoadPMin",
+          "caption": "Grid-effective power consumption per §14a (Pmin)",
+          "digits": 2,
+          "suffix": " kW",
+          "minimum": 0
+        }
+      ],
+      "name": "PminPanel"
+    },
+    {
+      "type": "ExpansionPanel",
+      "name": "EEBusPanel",
+      "caption": "EEBUS",
+      "items": [
+        {
+          "type": "Label",
+          "name": "EEBusConnectionLine",
+          "caption": "(calculated when the form is opened)"
+        },
+        {
+          "type": "Label",
+          "name": "EEBusStateLine",
+          "caption": "(calculated when the form is opened)"
+        },
+        {
+          "type": "Label",
+          "name": "EEBusFailsafeLine",
+          "caption": "(calculated when the form is opened)"
+        },
+        {
+          "type": "Label",
+          "caption": "Rated values of the controlled installation that the control box queries (0 = not specified)."
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "EEBusConsumptionNominalKw",
+          "caption": "Maximum power consumption of the controlled consumers",
+          "digits": 2,
+          "suffix": " kW",
+          "minimum": 0
+        },
+        {
+          "type": "Label",
+          "name": "EEBusProductionNominalLine",
+          "caption": "(calculated when the form is opened)"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "EEBusProductionNominalKw",
+          "caption": "Installed PV capacity",
+          "digits": 2,
+          "suffix": " kWp",
+          "minimum": 0
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "EEBusFailsafeProductionKw",
+          "caption": "Default failsafe feed-in limit (0 = no default, unlimited during a failure)",
+          "digits": 2,
+          "suffix": " kW",
+          "minimum": 0
+        }
+      ]
+    },
+    {
+      "type": "Button",
+      "caption": "🔄 Force apply (without form changes)",
+      "onClick": "IPS_ApplyChanges($id); echo '✅ ApplyChanges() executed.';"
+    }
+  ],
+  "actions": [],
+  "status": [
+    {
+      "code": 102,
+      "icon": "active",
+      "caption": "Active."
+    },
+    {
+      "code": 104,
+      "icon": "inactive",
+      "caption": "Not configured yet: no EEBUS gateway assigned."
+    },
+    {
+      "code": 203,
+      "icon": "error",
+      "caption": "EEBUS: registration with the gateway failed (check the messages)."
+    },
+    {
+      "code": 204,
+      "icon": "error",
+      "caption": "EEBUS: control box unreachable – failsafe limit applies or applied (details in the form)."
+    },
+    {
+      "code": 210,
+      "icon": "inactive",
+      "caption": "EEBUS: waiting for the first connection to the control box (check the pairing in the gateway)."
+    }
+  ]
+}

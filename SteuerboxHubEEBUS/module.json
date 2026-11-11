@@ -4,7 +4,7 @@
   "type": 3,
   "vendor": "",
   "aliases": [
-    "NRG-Stack SteuerboxHub EEBUS-Anbindung"
+    "NRG-Stack SteuerboxHub EEBUS"
   ],
   "url": "https://github.com/DG65/NRGSteuerboxHub",
   "parentRequirements": [

@@ -2,8 +2,8 @@
 
 // ===========================================================================
 // SteuerboxHub — erfasst das Dimm-/Steuersignal des Netzbetreibers nach
-// §14a EnWG (Steuerung steuerbarer Verbrauchseinrichtungen) und stellt es dem
-// EMS als Constraint OBERSTER Priorität bereit.
+// §14a EnWG (Steuerung steuerbarer Verbrauchseinrichtungen) über potentialfreie
+// Kontakte und stellt es dem EMS als Constraint OBERSTER Priorität bereit.
 //
 // Rollenteilung im Verbund (bewusst so, siehe CLAUDE.md):
 //   SteuerboxHub  — erfasst NUR das Signal und publiziert es sauber. Setzt
@@ -12,65 +12,79 @@
 //                   und verteilt die resultierenden Sollwerte an die Hubs.
 //   Hubs          — bieten Stellhebel, führen je Gerät aus.
 //
-// Zwei Transportwege (siehe CLAUDE.md für die Herleitung):
-//   'contacts' — potentialfreie Kontakte (RCR-Schema 0/30/60/100 %), Zielwert
-//                (loadPMin) wird vom Installateur in der Instanz konfiguriert,
-//                da die Hardware selbst keinen Zahlenwert liefert.
-//   'eebus'    — Anwendungsfälle LPC/LPP (Begrenzung von Bezug/Einspeisung)
-//                über SHIP/SPINE. Den Protokollstapel hält das NRG-Stack
-//                EEBUS-Gateway (Präfix EEBGW, eigenes Modul, reines PHP über
-//                Symcons Client Socket, geprüft gegen eebus-go controlbox am
-//                27.10.2026). Am Gateway hängt die Brücke SteuerboxHubEEBUS
-//                (Präfix SBHE, gleiche Bibliothek), nicht SteuerboxHub selbst:
-//                Mit parentRequirements am Hauptmodul zeigte jede Instanz auf
-//                dem Kontakte-Weg den Balken „benötigt eine übergeordnete
-//                Instanz“ (live 27.10.2026). Über die Brücke (Kind-Schnittstelle
-//                1.0, SBHE_Forward / SBH_ProcessEEBus) meldet sich SteuerboxHub
-//                als Entität mit LPC und
-//                LPP in der Rolle "ControllableSystem" an, liefert die
-//                Feature-Daten und übersetzt Schreibbefehle und Heartbeat-
-//                Ausfall in SBH_GetState. Das Gateway kennt keine §14a-Logik,
-//                die Zustandsmaschine (gesteuert / Ausfall / autonom) liegt hier.
-//                Die früheren Eigenschaften EEBusBridgeURL/EEBusSKI (Wartegerüst
-//                für einen externen Bridge-Dienst, 24.07.2026) sind ohne
-//                Funktion und bleiben nur registriert, damit bestehende
-//                Instanzen beim Update keine Eigenschaft verlieren.
+// Kontakte: potentialfreie Kontakte (RCR-Schema 0/30/60/100 %, FNN-Dreistufenschema
+// W3/S1/S2 für die Einspeisung), Zielwert (loadPMin) wird vom Installateur in der Instanz
+// konfiguriert, da die Hardware selbst keinen Zahlenwert liefert.
+//
+// EEBUS ist seit 0.6.0 ein eigenes Modul (SteuerboxHubEEBUS, Präfix SBHE, hängt direkt
+// am NRG-Stack EEBUS-Gateway; Vertrag SBHE_GetState mit denselben Feldern). Grund war
+// der Store-Review vom 11.11.2026: Hub und Brücke sprachen über öffentliche Funktionen
+// statt über den Datenfluss. Dieses Modul bleibt deshalb ohne Elternteil. Das Gemeinsame
+// (Formular-Konvention, Pmin-Rechenhilfe, Zahlen- und Zeitformat) steht in
+// libs/SteuerboxHubBase.php. Die Eigenschaften des früheren EEBUS-Wegs bleiben nur
+// registriert, damit bestehende Instanzen beim Update keine Eigenschaft verlieren.
 // ===========================================================================
 
-class SteuerboxHub extends IPSModule
+require_once __DIR__ . '/../libs/SteuerboxHubBase.php';
+
+class SteuerboxHub extends SteuerboxHubBase
 {
-    // Kind-Schnittstelle 1.0 des EEBUS-Gateways (EEBUSGateway/.docs/kind-schnittstelle.md).
-    private const EEBGW_MODULE_ID       = '{32809AEC-3A90-455F-8FE4-188DF37D594F}';
-    private const EEBGW_DATA_TO_CHILD   = '{12D8B8A8-3EE7-491F-A68A-D632304165D4}';
-    private const BRIDGE_MODULE_ID      = '{1DEF9F7C-FFF8-4DA3-97ED-A1F6F9F587C5}';
+    private const NEWS_VERSIONS = [
+        '0.4.0' => [
+            '• 🪟 New: choose the form layout yourself. In the “Form layout” section (below) you decide for each area whether it is expanded, collapsed or hidden when opened, and where it appears.',
+        ],
+        '0.5.0' => [
+            '• 🌐 New: SteuerboxHub is now also available in English (form, messages, documentation). The language follows the Symcon setting.',
+        ],
+        '0.6.0' => [
+            '• EEBUS has moved into its own module, “NRG-Stack SteuerboxHub EEBUS”. This module now only handles the contacts path. An instance that is still set to EEBUS shows a note and delivers no signal.',
+        ],
+    ];
 
-    // LPC/LPP: Heartbeat der Steuerbox länger als 120 s weg = Ausfall (Szenario 3/4);
-    // Mindestdauer des Ausfallzustands 2 h bis 24 h, Vorgabe 2 h (Szenario 2).
-    private const EEBUS_HEARTBEAT_TIMEOUT_S = 120;
-    private const EEBUS_FAILSAFE_MIN_S      = 7200;
-    private const EEBUS_FAILSAFE_MAX_S      = 86400;
-    private const EEBUS_TICK_S              = 10;
+    private const FEEDIN_SINGLE_FIELDS = ['FeedInContactVarID', 'FeedInContactInverted', 'FeedInLimitPercent'];
+    private const FEEDIN_FNN_FIELDS    = ['FeedInFNNLabel', 'FeedInW3VarID', 'FeedInS1VarID', 'FeedInS2VarID', 'FeedInFNNInverted'];
 
-    // Eigene Kennungen in LoadControl bzw. DeviceConfiguration (wie eebus-go).
-    private const LIMIT_CONSUMPTION        = 0;
-    private const LIMIT_PRODUCTION         = 1;
-    private const KEY_FAILSAFE_CONSUMPTION = 0;
-    private const KEY_FAILSAFE_DURATION    = 1;
-    private const KEY_FAILSAFE_PRODUCTION  = 2;
+    protected function modulePrefix(): string
+    {
+        return 'SBH';
+    }
+
+    protected function moduleDir(): string
+    {
+        return __DIR__;
+    }
+
+    protected function newsVersions(): array
+    {
+        return self::NEWS_VERSIONS;
+    }
+
+    protected function purposeParagraphs(): array
+    {
+        return [
+            'SteuerboxHub receives the power limit set by the grid operator under §14a EnWG through the contacts of a control box or ripple control receiver. It reports whether and how strongly consumption and feed-in are currently limited, with the time. EEBUS is handled by the separate module “NRG-Stack SteuerboxHub EEBUS”.',
+            'It does not control anything itself. An energy management system has to enforce the limit, e.g. the NRG-Stack EMS (wallboxes, inverters), or your own script via SBH_GetState.',
+        ];
+    }
+
+    protected function formPanels(): array
+    {
+        return ['PminPanel' => 'pmin', 'ContactsPanel' => 'contacts'];
+    }
+
+    protected function formPanelLabels(): array
+    {
+        return ['pmin' => 'Minimum power under §14a', 'contacts' => 'Potential-free contacts'];
+    }
 
     public function Create()
     {
         parent::Create();
+        $this->registerCommon();
 
-        // Transportweg: 0 = potentialfreie Kontakte, 1 = EEBus.
-        $this->RegisterPropertyInteger('Transport', 0);
-
-        // --- Kontakte-Weg ---
+        // --- Kontakte ---
         $this->RegisterPropertyInteger('LoadContactVarID', 0);
         $this->RegisterPropertyBoolean('LoadContactInverted', false);
-        $this->RegisterPropertyFloat('LoadPMin', 4.2);
-        $this->RegisterPropertyInteger('GZFConsumerCount', 1);
-        $this->RegisterPropertyFloat('GZFFactor', 0.0); // 0 = automatisch nach BNetzA-Tabelle
         // Einspeiseseite: reale FNN-Steuerboxen (Vorbild: evcc-Referenz-Doku
         // "FNN-Steuerbox via GPIO") melden hier NICHT einen einzelnen binären
         // Trigger, sondern DREI separate Kontakte für die drei Stufen des
@@ -92,22 +106,14 @@ class SteuerboxHub extends IPSModule
         // OpenEMS Limiter14aImpl: >60 s ohne Signal gilt als kritisch.
         $this->RegisterPropertyInteger('WatchdogTimeout', 60);
 
-        // --- EEBus-Weg (über die Brücke SteuerboxHubEEBUS am EEBUS-Gateway) ---
-        // 0 = automatisch, wenn genau eine Brücke existiert.
+        // Altlasten aus 0.2 bis 0.5 (EEBUS im selben Modul): ohne Funktion, bleiben registriert.
+        // 0 = Kontakte, 1 = früherer EEBUS-Weg (zeigt nur einen Hinweis, liefert kein Signal).
+        $this->RegisterPropertyInteger('Transport', 0);
         $this->RegisterPropertyInteger('EEBusBridgeID', 0);
-        // Ohne Funktion, siehe Klassenkommentar.
-        $this->RegisterPropertyString('FormLayout', '[]');
         $this->RegisterPropertyString('EEBusBridgeURL', '');
         $this->RegisterPropertyString('EEBusSKI', '');
-        // Nennwerte der gesteuerten Anlage, 0 = nicht angegeben. Die Erzeugungs-Nennleistung ist
-        // zugleich Bezugsgröße für feedInLimitPercent (EEBUS liefert Watt, der Vertrag Prozent).
-        // Sie muss die installierte PV-Leistung (kWp) sein: Das EMS rechnet den Prozentwert mit
-        // genau dieser Größe in Watt zurück (live geprüft 27.10.2026: 3000 W → 32,7 % → 3002 W).
         $this->RegisterPropertyFloat('EEBusConsumptionNominalKw', 0.0);
         $this->RegisterPropertyFloat('EEBusProductionNominalKw', 0.0);
-        // Vorgabe der Ausfallgrenze Einspeisung, bis die Steuerbox eine eigene schreibt.
-        // 0 = keine Vorgabe (im Ausfall bleibt die Einspeisung unbegrenzt).
-        // Die Vorgabe der Ausfallgrenze Bezug ist LoadPMin (Pmin nach §14a).
         $this->RegisterPropertyFloat('EEBusFailsafeProductionKw', 0.0);
 
         // Selbst geführter Zustand (Hardware liefert keinen Zeitstempel).
@@ -117,16 +123,10 @@ class SteuerboxHub extends IPSModule
         $this->RegisterAttributeInteger('FeedInSince', 0);
         $this->RegisterAttributeInteger('LoadLastSeen', 0);
         $this->RegisterAttributeInteger('FeedInLastSeen', 0);
-        $this->RegisterAttributeFloat('FeedInPercent', 100.0); // FeedInMode=1 (FNN-Dreistufen) und EEBus
-        $this->RegisterAttributeString('EEBusState', '');
-
-        // Formular-Hinweise (ausblendbar)
-        $this->RegisterAttributeBoolean('PurposeIntroGone', false);
-        $this->RegisterAttributeString('SeenNews', '');
-        $this->RegisterAttributeBoolean('ForumHintGone', false);
+        $this->RegisterAttributeFloat('FeedInPercent', 100.0); // FeedInMode=1 (FNN-Dreistufen)
+        $this->RegisterAttributeString('EEBusState', ''); // Altlast
 
         $this->RegisterTimer('SBH_Watchdog', 0, 'SBH_CheckWatchdog($_IPS[\'TARGET\']);');
-        $this->RegisterTimer('SBH_EEBus', 0, 'SBH_CheckEEBus($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges()
@@ -140,16 +140,36 @@ class SteuerboxHub extends IPSModule
         }
 
         $this->SetTimerInterval('SBH_Watchdog', 0);
-        $this->SetTimerInterval('SBH_EEBus', 0);
+        // Altlast: Instanzen aus 0.2 bis 0.5 haben noch den Timer des früheren EEBUS-Wegs.
+        if (@IPS_GetObjectIDByIdent('SBH_EEBus', $this->InstanceID)) {
+            $this->SetTimerInterval('SBH_EEBus', 0);
+        }
 
-        if ($this->ReadPropertyInteger('Transport') === 0) {
-            $this->applyContactsTransport();
-            // Brücke vorhanden, aber Kontakte gewählt: beim Gateway keine LPC/LPP-Entität anbieten.
-            if (IPS_GetKernelRunlevel() === KR_READY && $this->eebusGatewayID() > 0) {
-                $this->eebusCall(['Cmd' => 'Unregister']);
-            }
-        } else {
-            $this->applyEEBusTransport();
+        if ($this->ReadPropertyInteger('Transport') !== 0) {
+            // Früherer EEBUS-Weg: das Formular zeigt einen Hinweis, kein Signal (Status 104, neutral).
+            $this->SetStatus(104);
+            return;
+        }
+        $this->applyContactsTransport();
+    }
+
+    /** Altlast: Ein früher angelegter Timer ruft diese Funktion noch auf. EEBUS ist umgezogen, hier passiert nichts mehr. */
+    public function CheckEEBus()
+    {
+    }
+
+    protected function prepareForm(array &$form): void
+    {
+        $this->applyFeedInVisibility($form['elements'], $this->ReadPropertyInteger('FeedInMode'));
+        if ($this->ReadPropertyInteger('Transport') !== 0) {
+            array_unshift(
+                $form['elements'],
+                ['type' => 'Label', 'caption' => '⚠️ This instance is still set to the former EEBUS transport. EEBUS now has its own module, “NRG-Stack SteuerboxHub EEBUS”: create it, attach it to the EEBUS Gateway and read its state with SBHE_GetState. This instance delivers no signal until you switch it to potential-free contacts below or delete it.'],
+                ['type' => 'Select', 'name' => 'Transport', 'caption' => 'Transport path', 'options' => [
+                    ['caption' => 'Potential-free contacts', 'value' => 0],
+                    ['caption' => 'EEBUS (moved to its own module, no function here)', 'value' => 1],
+                ]]
+            );
         }
     }
 
@@ -214,227 +234,6 @@ class SteuerboxHub extends IPSModule
         $this->SetStatus(102);
     }
 
-    private function applyEEBusTransport(): void
-    {
-        $this->SetTimerInterval('SBH_EEBus', self::EEBUS_TICK_S * 1000);
-
-        // Beim Symcon-Start ist das Gateway evtl. noch nicht da: Anmeldung nach dem Start nachholen.
-        if (IPS_GetKernelRunlevel() !== KR_READY) {
-            $this->RegisterMessage(0, IPS_KERNELSTARTED);
-            return;
-        }
-        $this->eebusRegister();
-        $this->eebusTick(false);
-    }
-
-    // Formular-Reihenfolge (SUITE.md „Einheitliche Formular-Optik“):
-    // 0. „Wozu dieses Modul?“ (aufgeklappt, einmalig ausblendbar)
-    // 1. „Neu bis Version“ (aufgeklappt, versionsscharf ausblendbar, NEWS_VERSIONS)
-    // 2. „Dokumentation & Hilfe“ (eingeklappt, mit Versionsnummer, aus form.json)
-    // 3. Fachpanels (form.json)
-    // 4. Rückmeldungen (einmalig ausblendbar)
-    // 5. „Über dieses Modul“ (eingeklappt, nicht ausblendbar)
-    private const NEWS_VERSIONS = [
-        '0.2.0' => [
-            '• New transport path EEBUS: SteuerboxHub attaches as a child instance to the NRG-Stack EEBUS Gateway and receives the control box limits for consumption (LPC) and feed-in (LPP), including time-limited ones.',
-            '• If the control box fails for more than 120 s, the failsafe limits apply until it sends a new limit or the minimum duration has elapsed.',
-            '• Pmin under §14a, with a calculator, now has its own section and applies to both paths.',
-        ],
-        '0.3.0' => [
-            '• 👋 New purpose introduction at the top of the form, plus feedback and license notes.',
-            '• EEBUS: the feed-in limit is related to the installed PV capacity (kWp), the same value the EMS calculates with.',
-            '• EEBUS: the gateway now has its own instance, “NRG-Stack SteuerboxHub EEBUS Connector”, attached instead of SteuerboxHub itself. This removes the “requires a parent instance” message on the contacts path. Create it with the button in the EEBUS section.',
-        ],
-        '0.4.0' => [
-            '• 🪟 New: choose the form layout yourself. In the “Form layout” section (below) you decide for each area whether it is expanded, collapsed or hidden when opened, and where it appears.',
-        ],
-        '0.5.0' => [
-            '• 🌐 New: SteuerboxHub is now also available in English (form, messages, documentation). The language follows the Symcon setting.',
-        ],
-    ];
-    private const LIBRARY_GUID = '{F790C1F0-4955-4C43-81F4-B4CBD415D0E1}';
-    private const REPO_URL     = 'https://github.com/DG65/NRGSteuerboxHub';
-    private const ISSUES_URL   = 'https://github.com/DG65/NRGSteuerboxHub/issues';
-    private const FORUM_URL    = 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795';
-    private const LICENSE_URL  = 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE';
-    private const PAYPAL_URL   = 'https://paypal.me/DietmarGureth';
-
-    public function GetConfigurationForm()
-    {
-        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
-        $this->injectVersionIntoDocPanel($form);
-        $this->applyFeedInVisibility($form['elements'], $this->ReadPropertyInteger('FeedInMode'));
-        $this->applyTransportVisibility($form['elements'], $this->ReadPropertyInteger('Transport'));
-        $this->injectEEBusStatus($form['elements']);
-        // Fachpanels (Punkt 3) herauslösen: Reihenfolge und Aufklapp-Zustand wählt der Nutzer („Formular: Aufbau“).
-        $head = [];
-        $free = [];
-        $tail = [];
-        foreach ($form['elements'] as $el) {
-            $key = self::FORM_PANELS[$el['name'] ?? ''] ?? null;
-            if ($key !== null) {
-                $free[$key] = $el;
-            } elseif ($free === []) {
-                $head[] = $el;
-            } else {
-                $tail[] = $el;
-            }
-        }
-        $layout = $this->formLayout(array_keys($free));
-        $middle = [];
-        foreach ($layout as $key => $l) {
-            $panel = $free[$key];
-            if ($l['open'] === 'open') {
-                $panel['expanded'] = true;
-            } elseif ($l['open'] === 'closed') {
-                $panel['expanded'] = false;
-            } elseif ($l['open'] === 'hidden') {
-                // Nicht weglassen: die Felder bleiben im Formular, gespeicherte Werte bleiben beim „Übernehmen“ erhalten.
-                $panel['visible'] = false;
-            }
-            $middle[] = $panel;
-        }
-        $form['elements'] = array_values(array_filter(array_merge(
-            [$this->formPurposeIntro(), $this->formNewsBanner()],
-            $head,
-            $middle,
-            $tail,
-            [$this->formLayoutPanel($layout), $this->formForumHint(), $this->formLicenseHint()]
-        )));
-        $this->translatePopups($form);
-        return json_encode($form);
-    }
-
-    /**
-     * Übersetzt die Popup-Texte in `onClick` (echo '…'). Die Konsole übersetzt caption und Optionen des Formulars selbst
-     * (aus locale.json), aber nicht den Text im Knopf-Skript.
-     */
-    private function translatePopups(array &$node): void
-    {
-        foreach ($node as $key => &$value) {
-            if (is_array($value)) {
-                $this->translatePopups($value);
-            } elseif ($key === 'onClick' && is_string($value)) {
-                $value = (string) preg_replace_callback("/echo '([^']*)';/u", function (array $m): string {
-                    return "echo '" . $this->Translate($m[1]) . "';";
-                }, $value);
-            }
-        }
-        unset($value);
-    }
-
-    public function AckPurposeIntro()
-    {
-        $this->WriteAttributeBoolean('PurposeIntroGone', true);
-        $this->UpdateFormField('PurposeIntroPanel', 'visible', false);
-    }
-
-    public function AckNews()
-    {
-        // Gespeichert wird die installierte Version, nicht der zuletzt gezeigte Eintrag (SUITE.md Formular-Optik Punkt 1).
-        $this->WriteAttributeString('SeenNews', $this->installedVersion());
-        $this->UpdateFormField('NewsPanel', 'visible', false);
-    }
-
-    public function AckForumHint()
-    {
-        $this->WriteAttributeBoolean('ForumHintGone', true);
-        $this->UpdateFormField('ForumHintPanel', 'visible', false);
-    }
-
-    private function installedVersion(): string
-    {
-        $lib = @IPS_GetLibrary(self::LIBRARY_GUID);
-        if (is_array($lib) && !empty($lib['Version'])) {
-            return (string) preg_replace('/-.*$/', '', (string) $lib['Version']);
-        }
-        $keys = array_keys(self::NEWS_VERSIONS);
-        usort($keys, 'version_compare');
-        return (string) end($keys);
-    }
-
-    private function formPurposeIntro(): ?array
-    {
-        if ($this->ReadAttributeBoolean('PurposeIntroGone')) {
-            return null;
-        }
-        return [
-            'type' => 'ExpansionPanel', 'name' => 'PurposeIntroPanel', 'expanded' => true,
-            'caption' => '👋  What is this module for?',
-            'items' => [
-                ['type' => 'Label', 'caption' => 'SteuerboxHub receives the power limit set by the grid operator under §14a EnWG: via the contacts of a control box or ripple control receiver, or via EEBUS. It reports whether and how strongly consumption and feed-in are currently limited, with the time.'],
-                ['type' => 'Label', 'caption' => 'It does not control anything itself. An energy management system has to enforce the limit, e.g. the NRG-Stack EMS (wallboxes, inverters), or your own script via SBH_GetState. EEBUS additionally requires the NRG-Stack EEBUS Gateway and the EEBUS connector from this module.'],
-                ['type' => 'Button', 'caption' => 'Got it – do not show again', 'onClick' => 'SBH_AckPurposeIntro($id);'],
-            ],
-        ];
-    }
-
-    private function formNewsBanner(): ?array
-    {
-        $seen    = (string) $this->ReadAttributeString('SeenNews');
-        $pending = [];
-        foreach (self::NEWS_VERSIONS as $version => $lines) {
-            if (version_compare((string) $version, $seen === '' ? '0' : $seen, '>')) {
-                $pending[(string) $version] = $lines;
-            }
-        }
-        if ($pending === []) {
-            return null;
-        }
-        uksort($pending, 'version_compare');
-        $items = [];
-        foreach ($pending as $version => $lines) {
-            $items[] = ['type' => 'Label', 'caption' => sprintf($this->Translate('Version %s:'), $version)];
-            foreach ($lines as $line) {
-                $items[] = ['type' => 'Label', 'caption' => $line];
-            }
-        }
-        $items[] = ['type' => 'Button', 'caption' => 'Got it – do not show again', 'onClick' => 'SBH_AckNews($id);'];
-        $keys = array_keys($pending);
-        return [
-            'type' => 'ExpansionPanel', 'name' => 'NewsPanel', 'expanded' => true,
-            'caption' => sprintf($this->Translate('🆕  New up to version %s'), end($keys)),
-            'items' => $items,
-        ];
-    }
-
-    private function formForumHint(): ?array
-    {
-        if ($this->ReadAttributeBoolean('ForumHintGone')) {
-            return null;
-        }
-        return [
-            'type' => 'ExpansionPanel', 'name' => 'ForumHintPanel', 'expanded' => true,
-            'caption' => '💬  Feedback',
-            'items' => [
-                ['type' => 'Label', 'caption' => '🧪 Which control box or ripple control receiver do you have installed, and does the signal arrive correctly? Feedback with manufacturer, model and grid operator helps a lot, especially on the EEBUS path.'],
-                ['type' => 'Button', 'caption' => 'Go to the forum thread', 'onClick' => "echo '" . self::FORUM_URL . "';", 'link' => true],
-                ['type' => 'Button', 'caption' => 'Report a bug on GitHub', 'onClick' => "echo '" . self::ISSUES_URL . "';", 'link' => true],
-                ['type' => 'Button', 'caption' => 'Got it – do not show again', 'onClick' => 'SBH_AckForumHint($id);'],
-            ],
-        ];
-    }
-
-    /** Wortlaut verbundweit identisch (SUITE.md Formular-Optik Punkt 5, Variante A). */
-    private function formLicenseHint(): array
-    {
-        return [
-            'type' => 'ExpansionPanel', 'expanded' => false,
-            'caption' => '🧡  About this module',
-            'items' => [
-                ['type' => 'Label', 'caption' => 'Born out of genuine enthusiasm for my own system — and a few evenings spent at the keyboard. Still: hobby or not, this is intellectual property and real work went into it.'],
-                ['type' => 'Label', 'caption' => 'License: PolyForm Noncommercial 1.0.0 — free for private and non-commercial use; commercial use requires a separate license from the rights holder.'],
-                ['type' => 'Button', 'caption' => 'View license text', 'onClick' => "echo '" . self::LICENSE_URL . "';", 'link' => true],
-                ['type' => 'Label', 'caption' => 'Commercial use or questions about the license? Just get in touch: dietmar@gureth.eu'],
-                ['type' => 'Label', 'caption' => 'Do you like the module and want to give something back? I would be happy about a small donation — entirely voluntary, nothing expected in return.'],
-                ['type' => 'Button', 'caption' => '☕  Donate via PayPal', 'onClick' => "echo '" . self::PAYPAL_URL . "';", 'link' => true],
-            ],
-        ];
-    }
-
-    private const FEEDIN_SINGLE_FIELDS = ['FeedInContactVarID', 'FeedInContactInverted', 'FeedInLimitPercent'];
-    private const FEEDIN_FNN_FIELDS    = ['FeedInFNNLabel', 'FeedInW3VarID', 'FeedInS1VarID', 'FeedInS2VarID', 'FeedInFNNInverted'];
-
     private function applyFeedInVisibility(array &$items, int $mode): void
     {
         foreach ($items as &$el) {
@@ -462,150 +261,8 @@ class SteuerboxHub extends IPSModule
         }
     }
 
-    // „Formular: Aufbau“ (SUITE.md Einheitliche Formular-Optik 3a): wählbare Fachpanels, Schlüssel je Panel-Name.
-    private const FORM_PANELS = ['PminPanel' => 'pmin', 'ContactsPanel' => 'contacts', 'EEBusPanel' => 'eebus'];
-    private const FORM_PANEL_LABELS = ['pmin' => 'Minimum power under §14a', 'contacts' => 'Potential-free contacts', 'eebus' => 'EEBUS'];
-
-    /**
-     * Reihenfolge und Aufklapp-Zustand der Fachpanels aus der Einstellung „FormLayout“.
-     * Unbekannte oder fehlende Einträge fallen auf Standardreihenfolge und „Standard“ zurück.
-     *
-     * @param string[] $keys Schlüssel der Fachpanels in Standardreihenfolge
-     * @return array key => ['open' => 'std'|'open'|'closed'|'hidden', 'pos' => int, 'idx' => int], in anzuwendender Reihenfolge
-     */
-    private function formLayout(array $keys): array
-    {
-        $saved = json_decode((string) $this->ReadPropertyString('FormLayout'), true);
-        $by = [];
-        foreach (is_array($saved) ? $saved : [] as $row) {
-            if (is_array($row) && isset($row['Key'])) {
-                $by[(string) $row['Key']] = $row;
-            }
-        }
-        $out = [];
-        foreach ($keys as $i => $k) {
-            $r = $by[$k] ?? [];
-            // Vorrang bei Widerspruch: ausgeblendet vor zugeklappt vor aufgeklappt, kein Haken = Standard
-            $open = !empty($r['Hidden']) ? 'hidden' : (!empty($r['Closed']) ? 'closed' : (!empty($r['Opened']) ? 'open' : 'std'));
-            $out[$k] = [
-                'open' => $open,
-                'pos'  => isset($r['Pos']) ? max(1, min(99, (int) $r['Pos'])) : $i + 1,
-                'idx'  => $i,
-            ];
-        }
-        uasort($out, function ($a, $b) { return [$a['pos'], $a['idx']] <=> [$b['pos'], $b['idx']]; });
-        return $out;
-    }
-
-    private function formLayoutPanel(array $layout): array
-    {
-        $rows   = [];
-        $hidden = [];
-        foreach ($layout as $key => $l) {
-            $name   = $this->Translate(self::FORM_PANEL_LABELS[$key] ?? $key);
-            $rows[] = ['Key' => $key, 'Panel' => $name, 'Opened' => $l['open'] === 'open', 'Closed' => $l['open'] === 'closed',
-                'Hidden' => $l['open'] === 'hidden', 'Pos' => $l['pos']];
-            if ($l['open'] === 'hidden') {
-                $hidden[] = $name;
-            }
-        }
-        $hiddenLine = $hidden
-            ? [['type' => 'Label', 'caption' => sprintf($this->Translate('🙈 Hidden: %s — to show them again, clear the “Hidden” checkbox. Hidden areas keep working, only the display is missing.'), implode(', ', $hidden))]]
-            : [];
-        return [
-            'type' => 'ExpansionPanel', 'expanded' => false, 'name' => 'LayoutPanel',
-            'caption' => $hidden ? sprintf($this->Translate('🪟  Form layout (%d hidden)'), count($hidden)) : '🪟  Form layout',
-            'items' => array_merge($hiddenLine, [
-                ['type' => 'Label', 'caption' => 'Here you decide which areas are expanded when the form opens and in which order they appear. Symcon does not remember expanding and collapsing by itself, so this setting applies every time the form is opened. It takes effect after “Apply Changes”, the next time the form is opened.'],
-                ['type' => 'Label', 'caption' => 'No checkbox set means “default”: as the module intends it. The position is a number; with equal numbers the default order is kept. “Hidden” removes an area from the display without losing anything: its settings are kept and stay in effect. To show it again, clear the “Hidden” checkbox or click “Reset to default”. If several checkboxes are set, “Hidden” beats “Collapsed” beats “Expanded”. The areas at the top (purpose, news, documentation), the choice of the transport path, and the areas at the bottom (feedback, about this module) stay where they are and cannot be hidden.'],
-                [
-                    'type' => 'List', 'name' => 'FormLayout', 'caption' => 'Areas', 'rowCount' => count($rows), 'add' => false, 'delete' => false,
-                    'loadValuesFromConfiguration' => false,
-                    'values' => $rows,
-                    'columns' => [
-                        ['caption' => 'Area', 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
-                        ['caption' => 'Key', 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
-                        ['caption' => 'Expanded', 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => 'Collapsed', 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => '🙈 Hidden', 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => 'Position', 'name' => 'Pos', 'width' => '100px', 'add' => 1, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 1, 'maximum' => 99]],
-                    ],
-                ],
-                ['type' => 'Button', 'caption' => '↩️ Reset to default', 'onClick' => 'echo SBH_ResetFormLayout($id);'],
-            ]),
-        ];
-    }
-
-    /** Setzt Aufklapp-Zustand und Reihenfolge der Fachpanels im offenen Formular auf den Standard (gilt nach „Übernehmen“). */
-    public function ResetFormLayout(): string
-    {
-        $rows = [];
-        foreach (array_values(self::FORM_PANELS) as $i => $key) {
-            $rows[] = ['Key' => $key, 'Panel' => $this->Translate(self::FORM_PANEL_LABELS[$key]), 'Opened' => false, 'Closed' => false, 'Hidden' => false, 'Pos' => $i + 1];
-        }
-        $this->UpdateFormField('FormLayout', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
-        return $this->Translate('ℹ️ Reset to default. Click “Apply Changes” below to save.');
-    }
-
-    /** Ob das Fachpanel im Formular-Aufbau ausgeblendet ist (dann darf die Transportwahl es nicht live einblenden). */
-    private function isPanelHidden(string $panelName): bool
-    {
-        $key = self::FORM_PANELS[$panelName] ?? null;
-        if ($key === null) {
-            return false;
-        }
-        return ($this->formLayout(array_values(self::FORM_PANELS))[$key]['open'] ?? 'std') === 'hidden';
-    }
-
-    private const TRANSPORT_PANELS = ['ContactsPanel' => 0, 'EEBusPanel' => 1];
-
-    private function applyTransportVisibility(array &$items, int $transport): void
-    {
-        foreach ($items as &$el) {
-            $name = $el['name'] ?? '';
-            if (isset(self::TRANSPORT_PANELS[$name])) {
-                $el['visible'] = (self::TRANSPORT_PANELS[$name] === $transport);
-            }
-            if (isset($el['items'])) {
-                $this->applyTransportVisibility($el['items'], $transport);
-            }
-        }
-        unset($el);
-    }
-
-    /** Formular: zeigt nur das Panel des gewählten Transportwegs. */
-    public function ToggleTransport(int $transport)
-    {
-        foreach (self::TRANSPORT_PANELS as $name => $value) {
-            $this->UpdateFormField($name, 'visible', $value === $transport && !$this->isPanelHidden($name));
-        }
-    }
-
-    private function injectVersionIntoDocPanel(array &$form): void
-    {
-        $lib    = @IPS_GetLibrary(self::LIBRARY_GUID);
-        $verTxt = (is_array($lib) && isset($lib['Version']))
-            ? 'ℹ️ SteuerboxHub Version ' . $lib['Version'] . ' (Build ' . ($lib['Build'] ?? '?') . ')'
-            : 'ℹ️ SteuerboxHub';
-        foreach ($form['elements'] as &$el) {
-            if (($el['name'] ?? '') === 'DocPanel') {
-                array_unshift($el['items'], ['type' => 'Label', 'caption' => $verTxt]);
-                return;
-            }
-        }
-        unset($el);
-    }
-
     public function MessageSink($timestamp, $senderID, $message, $data)
     {
-        if ($message === IPS_KERNELSTARTED) {
-            if ($this->ReadPropertyInteger('Transport') === 1) {
-                $this->eebusRegister();
-                $this->eebusTick(false);
-            }
-            return;
-        }
-
         // Während des Neuladens liefern die SDK-Aufrufe false statt des Typs (Checkliste 9c).
         if ($message !== VM_UPDATE || IPS_GetKernelRunlevel() !== KR_READY || !IPS_InstanceExists($this->InstanceID)) {
             return;
@@ -736,24 +393,6 @@ class SteuerboxHub extends IPSModule
         }
     }
 
-    /**
-     * Formular-Rechenhilfe: Pmin,14a = 4,2 kW + (n-1) × GZF × 4,2 kW.
-     * GZF = 0 (Standard) bedeutet automatisch nach BNetzA-Tabelle: max(0,9 - 0,05 × n; 0,45),
-     * also n=2: 0,80 ... n>=9: 0,45 (deckt sich mit dem Symcon-Energiemanager, Quelle KEDi/dena).
-     * Werte kommen direkt aus dem Formular, damit auch ungespeicherte Eingaben zählen.
-     * Rückgabe: Hinweistext fürs Formular (echo), nicht maschinell auswerten.
-     */
-    public function CalculateGZF(int $consumerCount, float $gzfOverride)
-    {
-        $n   = max(1, $consumerCount);
-        $gzf = $gzfOverride > 0 ? min(1.0, $gzfOverride) : max(0.9 - 0.05 * $n, 0.45);
-        $pMin = 4.2 + ($n - 1) * $gzf * 4.2;
-
-        $this->UpdateFormField('LoadPMin', 'value', round($pMin, 2));
-        return sprintf($this->Translate('✅ Pmin = %s kW (n = %d, simultaneity factor %s) entered in the field. The value is only saved with “Apply Changes”.'),
-            $this->fmt($pMin), $n, $this->fmt($gzf));
-    }
-
     // Final freigegebener Vertrag für das EMS (Dietmar, 24.07.2026).
     // Zwei unabhängige Achsen, weil eine §14a-Steuerbox BEIDES überträgt:
     //   - Lastseite: Begrenzung steuerbarer Verbrauchseinrichtungen (Wallbox, WP, Speicher).
@@ -762,20 +401,20 @@ class SteuerboxHub extends IPSModule
     // Verteilung auf Einzelgeräte (inkl. Gleichzeitigkeitsfaktor-Formel der BNetzA bei
     // mehreren steuerbaren Verbrauchern) ist Aufgabe des EMS, nicht dieses Moduls.
     // Immer hinter function_exists('SBH_GetState') beim Aufrufer (EMS).
+    // EEBUS liefert das eigene Modul SteuerboxHubEEBUS über SBHE_GetState (gleiche Felder).
     public function GetState(): array
     {
+        // Früherer EEBUS-Weg (Transport 1): hier kein Signal, EEBUS steht in SBHE_GetState.
         if ($this->ReadPropertyInteger('Transport') !== 0) {
-            // EEBus: Wirkung zum Abrufzeitpunkt (abgelaufene Befristung zählt sofort nicht mehr).
-            $eff = $this->eebusRefresh();
             return [
                 'contractVersion'    => '1.0',
                 'source'             => 'eebus',
-                'loadDimmActive'     => $eff['loadActive'],
-                'loadPMin'           => $eff['loadActive'] ? round($eff['loadW'] / 1000, 3) : 0.0,
-                'loadSince'          => (int) $this->ReadAttributeInteger('LoadSince'),
-                'feedInDimmActive'   => $eff['feedInActive'],
-                'feedInLimitPercent' => $eff['feedInActive'] ? $eff['feedInPercent'] : 100.0,
-                'feedInSince'        => (int) $this->ReadAttributeInteger('FeedInSince'),
+                'loadDimmActive'     => false,
+                'loadPMin'           => 0.0,
+                'loadSince'          => 0,
+                'feedInDimmActive'   => false,
+                'feedInLimitPercent' => 100.0,
+                'feedInSince'        => 0,
             ];
         }
 
@@ -794,713 +433,5 @@ class SteuerboxHub extends IPSModule
                 : ($feedInActive ? (float) $this->ReadPropertyFloat('FeedInLimitPercent') : 100.0),
             'feedInSince'        => (int) $this->ReadAttributeInteger('FeedInSince'),
         ];
-    }
-
-    // =======================================================================
-    // EEBus-Weg: Kind-Instanz des NRG-Stack EEBUS-Gateways
-    //
-    // Zustände (LPC/LPP, Abschnitt Zustandsmaschine der Anwendungsfälle):
-    //   unpaired   — noch nie mit einer Steuerbox verbunden: keine Begrenzung.
-    //   normal     — gesteuert: es gelten die geschriebenen Grenzen (mit Befristung).
-    //                Nach einem Neustart läuft der letzte Stand weiter, bis 120 s
-    //                ohne Heartbeat vergangen sind (Init-Zustand).
-    //   failsafe   — Heartbeat > 120 s weg (Ereignis des Gateways oder Verbindung
-    //                getrennt): es gelten die Ausfallgrenzen. Ende nur durch einen
-    //                neuen Grenzwert der Steuerbox oder nach der Mindestdauer.
-    //   autonomous — Mindestdauer abgelaufen, weiter keine Steuerbox: unbegrenzt,
-    //                bis sie wieder da ist (dann normal, ohne alte Grenzen).
-    // =======================================================================
-
-    /** Timer und Ereignisse: Verbindung abfragen, Zustandsübergänge, Befristungsende. */
-    public function CheckEEBus()
-    {
-        $this->eebusTick(true);
-    }
-
-    private function eebusTick(bool $retryRegister): void
-    {
-        if ($this->ReadPropertyInteger('Transport') !== 1) {
-            return;
-        }
-        if ($retryRegister && !$this->eebusIsRegistered()) {
-            $this->eebusRegister();
-        }
-        $remote = $this->eebusGatewayID() > 0 ? json_decode((string) $this->eebusCall(['Cmd' => 'GetState']), true) : null;
-
-        $sync = $this->eebusUpdate(function (array &$st, int $now) use ($remote) {
-            if (is_array($remote) && isset($remote['connected'])) {
-                $st['connected']    = (bool) $remote['connected'];
-                $st['trustPending'] = (bool) ($remote['trustPending'] ?? false);
-                $st['remoteShipId'] = (string) ($remote['remoteShipId'] ?? $st['remoteShipId']);
-                $st['heartbeatLost'] = (bool) ($remote['heartbeatLost'] ?? false);
-            } elseif ($this->eebusGatewayID() === 0) {
-                $st['connected'] = false;
-            }
-            return [];
-        });
-        $this->eebusSend($sync);
-    }
-
-    /** SBH_ProcessEEBus($id, $bridgeID, $json): Ereignis des Gateways, von der Brücke weitergereicht. */
-    public function ProcessEEBus(int $bridgeID, string $json)
-    {
-        $d = json_decode($json, true);
-        if (!is_array($d) || ($d['DataID'] ?? '') !== self::EEBGW_DATA_TO_CHILD || $this->ReadPropertyInteger('Transport') !== 1
-            || $bridgeID === 0 || $bridgeID !== $this->eebusBridgeID()) {
-            return '';
-        }
-        // Target = Instanz, die beim Gateway angemeldet ist (die Brücke), 0 = an alle.
-        $target = (int) ($d['Target'] ?? 0);
-        if ($target !== 0 && $target !== $bridgeID) {
-            return '';
-        }
-        $event = (string) ($d['Event'] ?? '');
-        $this->SendDebug('EEBUS', $event . ': ' . json_encode($d), 0);
-
-        $sync = $this->eebusUpdate(function (array &$st, int $now) use ($event, $d) {
-            $sync = [];
-            switch ($event) {
-                case 'connection':
-                    $st['connected'] = ($d['state'] ?? '') === 'connected';
-                    if ($st['connected']) {
-                        $st['remoteShipId']  = (string) ($d['shipId'] ?? $st['remoteShipId']);
-                        $st['trustPending']  = false;
-                        $st['heartbeatLost'] = false;
-                        $sync = ['all'];
-                    }
-                    break;
-                case 'trust':
-                    $st['trustPending'] = true;
-                    break;
-                case 'remote':
-                    $st['remoteUseCases'] = array_values(array_unique(array_map(function ($u) {
-                        return (string) ($u['name'] ?? '');
-                    }, (array) ($d['useCases'] ?? []))));
-                    break;
-                case 'heartbeat':
-                    $st['heartbeatLost'] = ($d['state'] ?? '') === 'lost';
-                    if ($st['heartbeatLost']) {
-                        $this->eebusEnterFailsafe($st, $now);
-                    } else {
-                        $st['lastAlive'] = $now;
-                    }
-                    break;
-                case 'write':
-                    $sync = $this->eebusApplyWrite($st, $now, (string) ($d['function'] ?? ''), (array) ($d['changes'] ?? []), (array) ($d['data'] ?? []));
-                    if (($d['bound'] ?? true) === false) {
-                        $this->SendDebug('EEBUS', $this->Translate('Write command without prior binding (accepted)'), 0);
-                    }
-                    break;
-            }
-            return $sync;
-        });
-        $this->eebusSend($sync);
-        return '';
-    }
-
-    /** Schreibbefehl der Steuerbox übernehmen; liefert nötige Rückmeldungen (SetData). */
-    private function eebusApplyWrite(array &$st, int $now, string $function, array $changes, array $data): array
-    {
-        if ($function === 'loadControlLimitListData') {
-            $changed = false;
-            foreach ($changes as $entry) {
-                $id = (int) ($entry['limitId'] ?? -1);
-                if ($id !== self::LIMIT_CONSUMPTION && $id !== self::LIMIT_PRODUCTION) {
-                    continue;
-                }
-                $old = $st['limits'][$id];
-                $w   = isset($entry['value']) ? abs(self::scaledToFloat($entry['value'])) : $old['w'];
-                $dur = isset($entry['timePeriod']['endTime']) ? self::endTimeToSeconds((string) $entry['timePeriod']['endTime'], $now) : 0;
-                $st['limits'][$id] = [
-                    'active' => (bool) ($entry['isLimitActive'] ?? $old['active']),
-                    'w'      => $w,
-                    'until'  => $dur > 0 ? $now + $dur : 0,
-                ];
-                $changed = true;
-                $consumption = $id === self::LIMIT_CONSUMPTION;
-                if ($st['limits'][$id]['active']) {
-                    $msg = $dur > 0
-                        ? sprintf($this->Translate($consumption ? 'EEBUS: consumption limit %s kW active for %d s' : 'EEBUS: feed-in limit %s kW active for %d s'), round($w / 1000, 3), $dur)
-                        : sprintf($this->Translate($consumption ? 'EEBUS: consumption limit %s kW active' : 'EEBUS: feed-in limit %s kW active'), round($w / 1000, 3));
-                } else {
-                    $msg = $dur > 0
-                        ? sprintf($this->Translate($consumption ? 'EEBUS: consumption limit lifted for %d s' : 'EEBUS: feed-in limit lifted for %d s'), $dur)
-                        : $this->Translate($consumption ? 'EEBUS: consumption limit lifted' : 'EEBUS: feed-in limit lifted');
-                }
-                $this->LogMessage($msg, KL_MESSAGE);
-            }
-            // Ein neuer Grenzwert beendet den Ausfallzustand (LPC/LPP Szenario 3).
-            if ($changed) {
-                $st['lastWriteAt'] = $now;
-                $st['lastAlive']   = $now;
-                if ($st['mode'] !== 'normal') {
-                    $this->LogMessage($this->Translate('EEBUS: control box is back in control, failsafe limit lifted.'), KL_MESSAGE);
-                }
-                $st['mode'] = 'normal';
-                $st['failsafeSince'] = 0;
-            }
-            return [];
-        }
-
-        if ($function === 'deviceConfigurationKeyValueListData') {
-            $fix = false;
-            foreach ((array) ($data['deviceConfigurationKeyValueData'] ?? []) as $entry) {
-                $key = (int) ($entry['keyId'] ?? -1);
-                if ($key === self::KEY_FAILSAFE_CONSUMPTION && isset($entry['value']['scaledNumber'])) {
-                    $st['failsafeRemote']['consumptionW'] = abs(self::scaledToFloat($entry['value']['scaledNumber']));
-                } elseif ($key === self::KEY_FAILSAFE_PRODUCTION && isset($entry['value']['scaledNumber'])) {
-                    $st['failsafeRemote']['productionW'] = abs(self::scaledToFloat($entry['value']['scaledNumber']));
-                } elseif ($key === self::KEY_FAILSAFE_DURATION && isset($entry['value']['duration'])) {
-                    $s = self::durationToSeconds((string) $entry['value']['duration']);
-                    $clamped = max(self::EEBUS_FAILSAFE_MIN_S, min(self::EEBUS_FAILSAFE_MAX_S, $s));
-                    // Außerhalb 2 h bis 24 h: nicht umsetzbar, tatsächlichen Stand zurückmelden.
-                    $fix = $fix || $clamped !== $s;
-                    $st['failsafeRemote']['durationS'] = $clamped;
-                }
-            }
-            $this->LogMessage(sprintf($this->Translate('EEBUS: failsafe values taken over from the control box: %s'), $this->eebusFailsafeText($st)), KL_MESSAGE);
-            return $fix ? ['failsafe'] : [];
-        }
-        return [];
-    }
-
-    private function eebusEnterFailsafe(array &$st, int $now): void
-    {
-        if ($st['mode'] !== 'normal') {
-            return; // unpaired: nie gekoppelt; failsafe/autonomous: schon ausgelöst
-        }
-        $st['mode'] = 'failsafe';
-        $st['failsafeSince'] = $now;
-        $this->LogMessage(sprintf($this->Translate('EEBUS: control box unreachable for more than 120 s, failsafe limit applies: %s'), $this->eebusFailsafeText($st)), KL_WARNING);
-    }
-
-    /**
-     * Zustand unter Sperre laden, $change anwenden, Zustandsübergänge und Befristungsende
-     * auswerten, speichern. Liefert die nötigen Rückmeldungen ans Gateway; gesendet wird
-     * erst NACH der Sperre (das Gateway kann im selben Aufruf Ereignisse zurückgeben).
-     */
-    private function eebusUpdate(callable $change): array
-    {
-        $sem = 'SBH_EEBus_' . $this->InstanceID;
-        if (!IPS_SemaphoreEnter($sem, 2000)) {
-            $this->SendDebug('EEBUS', $this->Translate('Lock busy, call discarded'), 0);
-            return [];
-        }
-        try {
-            $now  = $this->now();
-            $st   = $this->eebusLoadState();
-            $sync = $change($st, $now);
-
-            $alive = $st['connected'] && !$st['heartbeatLost'];
-            if ($alive) {
-                $st['lastAlive'] = $now;
-                if ($st['mode'] === 'unpaired') {
-                    $st['mode'] = 'normal';
-                } elseif ($st['mode'] === 'autonomous') {
-                    $st['mode'] = 'normal';
-                    $this->LogMessage($this->Translate('EEBUS: control box reachable again, operating without a limit until the next limit value.'), KL_MESSAGE);
-                }
-            } elseif ($st['mode'] === 'normal' && $st['lastAlive'] > 0 && $now - $st['lastAlive'] > self::EEBUS_HEARTBEAT_TIMEOUT_S
-                && $this->eebusGatewayID() > 0) {
-                $this->eebusEnterFailsafe($st, $now);
-            }
-
-            if ($st['mode'] === 'failsafe' && $now - $st['failsafeSince'] >= $this->eebusFailsafeDuration($st)) {
-                // Mindestdauer vorbei: Grenzen der Steuerbox gelten nicht mehr (LPC/LPP Szenario 3).
-                $st['limits'][self::LIMIT_CONSUMPTION]['active'] = false;
-                $st['limits'][self::LIMIT_PRODUCTION]['active']  = false;
-                $st['mode'] = $alive ? 'normal' : 'autonomous';
-                $st['failsafeSince'] = 0;
-                $sync[] = 'limits';
-                $this->LogMessage($this->Translate('EEBUS: minimum duration of the failsafe state elapsed, no limit any more.'), KL_MESSAGE);
-            }
-
-            // Befristung abgelaufen: Grenze inaktiv und der Steuerbox den tatsächlichen Stand melden.
-            foreach ([self::LIMIT_CONSUMPTION, self::LIMIT_PRODUCTION] as $id) {
-                $l = $st['limits'][$id];
-                if ($l['active'] && $l['until'] > 0 && $now >= $l['until']) {
-                    $st['limits'][$id]['active'] = false;
-                    $st['limits'][$id]['until']  = 0;
-                    $sync[] = 'limits';
-                    $this->LogMessage($this->Translate($id === self::LIMIT_CONSUMPTION ? 'EEBUS: the consumption limit has expired (time limit reached).' : 'EEBUS: the feed-in limit has expired (time limit reached).'), KL_MESSAGE);
-                }
-            }
-
-            $this->WriteAttributeString('EEBusState', json_encode($st));
-        } finally {
-            IPS_SemaphoreLeave($sem);
-        }
-        $this->eebusRefresh();
-        $this->eebusUpdateStatus();
-        return array_values(array_unique($sync));
-    }
-
-    /** Wirkung jetzt berechnen und die Vertrags-Attribute (aktiv/seit) nachführen. */
-    private function eebusRefresh(): array
-    {
-        $now = $this->now();
-        $st  = $this->eebusLoadState();
-        $eff = ['loadActive' => false, 'loadW' => 0.0, 'feedInActive' => false, 'feedInPercent' => 100.0];
-
-        // Ohne Anbindung und Gateway ist der EEBus-Weg nicht eingerichtet (Status 104): keine Begrenzung,
-        // auch nicht aus einem früher gespeicherten Zustand (Live-Fund 27.10.2026: Ausfallgrenze bei Status 104).
-        if ($this->eebusGatewayID() === 0) {
-            $st['mode'] = 'none';
-        }
-
-        if ($st['mode'] === 'normal') {
-            $lc = $st['limits'][self::LIMIT_CONSUMPTION];
-            if ($lc['active'] && ($lc['until'] === 0 || $now < $lc['until'])) {
-                $eff['loadActive'] = true;
-                $eff['loadW'] = (float) $lc['w'];
-            }
-            $lp = $st['limits'][self::LIMIT_PRODUCTION];
-            if ($lp['active'] && ($lp['until'] === 0 || $now < $lp['until'])) {
-                $eff['feedInActive'] = true;
-                $eff['feedInPercent'] = $this->eebusPercent((float) $lp['w']);
-            }
-        } elseif ($st['mode'] === 'failsafe') {
-            $fs = $this->eebusFailsafeValues($st);
-            $eff['loadActive'] = true;
-            $eff['loadW'] = $fs['consumptionW'];
-            if ($fs['productionW'] !== null) {
-                $eff['feedInActive'] = true;
-                $eff['feedInPercent'] = $this->eebusPercent($fs['productionW']);
-            }
-        }
-
-        foreach (['Load' => $eff['loadActive'], 'FeedIn' => $eff['feedInActive']] as $axis => $active) {
-            if ($active !== $this->ReadAttributeBoolean($axis . 'DimmActive')) {
-                $this->WriteAttributeBoolean($axis . 'DimmActive', $active);
-                $this->WriteAttributeInteger($axis . 'Since', $active ? $now : 0);
-            }
-        }
-        $this->WriteAttributeFloat('FeedInPercent', $eff['feedInPercent']);
-        return $eff;
-    }
-
-    /**
-     * EEBUS liefert Watt, der Vertrag Prozent der installierten PV-Leistung (Bezugsgröße des EMS). Ohne Nennleistung
-     * bleibt nur 0 % (sicher für das Netz); das Formular meldet das Feld dann als Pflicht.
-     */
-    private function eebusPercent(float $w): float
-    {
-        $nominalW = $this->ReadPropertyFloat('EEBusProductionNominalKw') * 1000;
-        if ($nominalW <= 0) {
-            return 0.0;
-        }
-        return round(max(0.0, min(100.0, $w / $nominalW * 100)), 1);
-    }
-
-    private function eebusFailsafeValues(array $st): array
-    {
-        $prodPreset = $this->ReadPropertyFloat('EEBusFailsafeProductionKw') > 0 ? $this->ReadPropertyFloat('EEBusFailsafeProductionKw') * 1000 : null;
-        return [
-            'consumptionW' => (float) ($st['failsafeRemote']['consumptionW'] ?? $this->ReadPropertyFloat('LoadPMin') * 1000),
-            'productionW'  => isset($st['failsafeRemote']['productionW']) ? (float) $st['failsafeRemote']['productionW'] : $prodPreset,
-            'durationS'    => $this->eebusFailsafeDuration($st),
-        ];
-    }
-
-    private function eebusFailsafeDuration(array $st): int
-    {
-        return (int) ($st['failsafeRemote']['durationS'] ?? self::EEBUS_FAILSAFE_MIN_S);
-    }
-
-    private function eebusFailsafeText(array $st): string
-    {
-        $fs = $this->eebusFailsafeValues($st);
-        $r  = $st['failsafeRemote'];
-        $fromBox = $this->Translate('from the control box');
-        $default = $this->Translate('default');
-        return sprintf(
-            $this->Translate('Consumption %s kW (%s), feed-in %s, minimum duration %s h (%s)'),
-            $this->fmt($fs['consumptionW'] / 1000),
-            isset($r['consumptionW']) ? $fromBox : $this->Translate('default Pmin'),
-            $fs['productionW'] === null ? $this->Translate('unlimited (no default)') : sprintf($this->Translate('%s kW (%s)'), $this->fmt($fs['productionW'] / 1000), isset($r['productionW']) ? $fromBox : $default),
-            $this->fmt($fs['durationS'] / 3600),
-            isset($r['durationS']) ? $fromBox : $default
-        );
-    }
-
-    private function eebusLoadState(): array
-    {
-        $st = json_decode((string) $this->ReadAttributeString('EEBusState'), true);
-        $default = [
-            'mode' => 'unpaired', 'connected' => false, 'heartbeatLost' => false, 'trustPending' => false,
-            'lastAlive' => 0, 'failsafeSince' => 0, 'lastWriteAt' => 0,
-            'remoteShipId' => '', 'remoteUseCases' => [],
-            'registeredWith' => 0, 'entity' => 0, 'registerError' => '', 'gateway' => 0,
-            'limits' => [
-                self::LIMIT_CONSUMPTION => ['active' => false, 'w' => 0.0, 'until' => 0],
-                self::LIMIT_PRODUCTION  => ['active' => false, 'w' => 0.0, 'until' => 0],
-            ],
-            'failsafeRemote' => ['consumptionW' => null, 'productionW' => null, 'durationS' => null],
-        ];
-        if (!is_array($st)) {
-            return $default;
-        }
-        $st = array_replace($default, $st);
-        // JSON macht aus den Kennungen 0/1 Schlüssel "0"/"1", PHP liest sie wieder als int.
-        $st['limits'] = array_replace($default['limits'], (array) $st['limits']);
-        $st['failsafeRemote'] = array_replace($default['failsafeRemote'], (array) $st['failsafeRemote']);
-        return $st;
-    }
-
-    /** Brücke SteuerboxHubEEBUS: eingetragen oder, wenn genau eine existiert, automatisch. */
-    private function eebusBridgeID(): int
-    {
-        $id = $this->ReadPropertyInteger('EEBusBridgeID');
-        if ($id === 0) {
-            $all = array_values(array_filter((array) @IPS_GetInstanceListByModuleID(self::BRIDGE_MODULE_ID), 'IPS_InstanceExists'));
-            return count($all) === 1 ? $all[0] : 0;
-        }
-        if (!IPS_InstanceExists($id) || (string) (IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') !== self::BRIDGE_MODULE_ID) {
-            return 0;
-        }
-        return $id;
-    }
-
-    /** Gateway, an dem die Brücke hängt (0 = keine Brücke oder kein Gateway). */
-    private function eebusGatewayID(): int
-    {
-        $bridge = $this->eebusBridgeID();
-        if ($bridge === 0) {
-            return 0;
-        }
-        $gw = (int) (IPS_GetInstance($bridge)['ConnectionID'] ?? 0);
-        if ($gw <= 0 || !IPS_InstanceExists($gw)) {
-            return 0;
-        }
-        return (string) (IPS_GetInstance($gw)['ModuleInfo']['ModuleID'] ?? '') === self::EEBGW_MODULE_ID ? $gw : 0;
-    }
-
-    /** Anfrage über die Brücke an das Gateway; Antwort als JSON-String, '' ohne Brücke/Gateway oder bei Fehler. */
-    private function eebusCall(array $request): string
-    {
-        $bridge = $this->eebusBridgeID();
-        if ($bridge === 0 || !function_exists('SBHE_Forward')) {
-            return '';
-        }
-        try {
-            return (string) SBHE_Forward($bridge, json_encode($request));
-        } catch (Throwable $e) {
-            $this->LogMessage(sprintf($this->Translate('EEBUS: request %s via connector #%d failed: %s'), $request['Cmd'] ?? '?', $bridge, $e->getMessage()), KL_WARNING);
-            return '';
-        }
-    }
-
-    private function eebusIsRegistered(): bool
-    {
-        $gw = $this->eebusGatewayID();
-        return $gw > 0 && $this->eebusLoadState()['registeredWith'] === $gw;
-    }
-
-    /** Entität mit LPC und LPP anmelden und alle Feature-Daten melden. */
-    private function eebusRegister(): void
-    {
-        $parent = $this->eebusGatewayID();
-        if ($parent === 0) {
-            $this->eebusUpdateStatus();
-            return;
-        }
-        $useCases = [];
-        foreach (['limitationOfPowerConsumption', 'limitationOfPowerProduction'] as $name) {
-            $useCases[] = ['actor' => 'ControllableSystem', 'name' => $name, 'version' => '1.0.0', 'subRevision' => 'release', 'scenarios' => [1, 2, 3, 4]];
-        }
-        $entity = [
-            'type'     => 'CEM',
-            'useCases' => $useCases,
-            'features' => [
-                ['type' => 'LoadControl', 'role' => 'server', 'functions' => [
-                    'loadControlLimitDescriptionListData' => ['read'], 'loadControlLimitListData' => ['read', 'write']]],
-                ['type' => 'DeviceConfiguration', 'role' => 'server', 'functions' => [
-                    'deviceConfigurationKeyValueDescriptionListData' => ['read'], 'deviceConfigurationKeyValueListData' => ['read', 'write']]],
-                ['type' => 'ElectricalConnection', 'role' => 'server', 'functions' => [
-                    'electricalConnectionCharacteristicListData' => ['read']]],
-            ],
-        ];
-        $r = json_decode($this->eebusCall(['Cmd' => 'Register', 'Entity' => $entity]), true);
-
-        $st = $this->eebusLoadState();
-        if (is_array($r) && ($r['ok'] ?? false) === true) {
-            if ($st['gateway'] !== $parent) {
-                // Anderes (oder erstes) Gateway: Grenzen, Ausfallwerte und Ausfallzustand einer früheren
-                // Steuerbox gelten hier nicht. Neu beginnen wie eine nie gekoppelte Instanz.
-                $this->WriteAttributeString('EEBusState', '');
-                $st = $this->eebusLoadState();
-                $st['gateway'] = $parent;
-                $this->LogMessage(sprintf($this->Translate('EEBUS: registered with gateway #%d, previous state discarded.'), $parent), KL_MESSAGE);
-            }
-            $st['registeredWith'] = $parent;
-            $st['entity'] = (int) ($r['entity'] ?? 0);
-            $st['registerError'] = '';
-        } else {
-            $st['registeredWith'] = 0;
-            $st['registerError'] = is_array($r) ? (string) ($r['error'] ?? $this->Translate('unknown response')) : $this->Translate('no response');
-            $this->LogMessage(sprintf($this->Translate('EEBUS: registration with gateway #%d failed: %s'), $parent, $st['registerError']), KL_WARNING);
-        }
-        $this->WriteAttributeString('EEBusState', json_encode($st));
-        if ($st['registeredWith'] > 0) {
-            $this->eebusSend(['all']);
-        }
-        $this->eebusUpdateStatus();
-    }
-
-    /** Feature-Daten ans Gateway melden: 'all', 'limits' oder 'failsafe'. */
-    private function eebusSend(array $what): void
-    {
-        if ($what === [] || !$this->eebusIsRegistered()) {
-            return;
-        }
-        $st  = $this->eebusLoadState();
-        $now = $this->now();
-        $all = in_array('all', $what, true);
-        $calls = [];
-
-        if ($all) {
-            $desc = function (int $id, string $dir) {
-                return ['limitId' => $id, 'limitType' => 'signDependentAbsValueLimit', 'limitCategory' => 'obligation',
-                    'limitDirection' => $dir, 'unit' => 'W', 'scopeType' => 'activePowerLimit'];
-            };
-            $calls[] = ['LoadControl', 'loadControlLimitDescriptionListData', ['loadControlLimitDescriptionData' => [
-                $desc(self::LIMIT_CONSUMPTION, 'consume'), $desc(self::LIMIT_PRODUCTION, 'produce')]]];
-            $calls[] = ['DeviceConfiguration', 'deviceConfigurationKeyValueDescriptionListData', ['deviceConfigurationKeyValueDescriptionData' => [
-                ['keyId' => self::KEY_FAILSAFE_CONSUMPTION, 'keyName' => 'failsafeConsumptionActivePowerLimit', 'valueType' => 'scaledNumber', 'unit' => 'W'],
-                ['keyId' => self::KEY_FAILSAFE_DURATION, 'keyName' => 'failsafeDurationMinimum', 'valueType' => 'duration'],
-                ['keyId' => self::KEY_FAILSAFE_PRODUCTION, 'keyName' => 'failsafeProductionActivePowerLimit', 'valueType' => 'scaledNumber', 'unit' => 'W']]]];
-            $chars = [];
-            foreach ([0 => ['contractualConsumptionNominalMax', 'EEBusConsumptionNominalKw'], 1 => ['contractualProductionNominalMax', 'EEBusProductionNominalKw']] as $cid => [$type, $prop]) {
-                $c = ['electricalConnectionId' => 0, 'parameterId' => 0, 'characteristicId' => $cid, 'characteristicContext' => 'entity', 'characteristicType' => $type, 'unit' => 'W'];
-                if ($this->ReadPropertyFloat($prop) > 0) {
-                    $c['value'] = self::floatToScaled($this->ReadPropertyFloat($prop) * 1000);
-                }
-                $chars[] = $c;
-            }
-            $calls[] = ['ElectricalConnection', 'electricalConnectionCharacteristicListData', ['electricalConnectionCharacteristicData' => $chars]];
-        }
-        if ($all || in_array('limits', $what, true)) {
-            $limits = [];
-            foreach ([self::LIMIT_CONSUMPTION => 1, self::LIMIT_PRODUCTION => -1] as $id => $sign) {
-                $l = $st['limits'][$id];
-                // LPP: Einspeisegrenze laut Spezifikation <= 0 W.
-                $e = ['limitId' => $id, 'isLimitChangeable' => true, 'isLimitActive' => $l['active'], 'value' => self::floatToScaled($sign * $l['w'])];
-                if ($l['active'] && $l['until'] > $now) {
-                    $e['timePeriod'] = ['endTime' => 'PT' . ($l['until'] - $now) . 'S'];
-                }
-                $limits[] = $e;
-            }
-            $calls[] = ['LoadControl', 'loadControlLimitListData', ['loadControlLimitData' => $limits]];
-        }
-        if ($all || in_array('failsafe', $what, true)) {
-            $fs = $this->eebusFailsafeValues($st);
-            $prod = ['keyId' => self::KEY_FAILSAFE_PRODUCTION, 'isValueChangeable' => true];
-            if ($fs['productionW'] !== null) {
-                $prod['value'] = ['scaledNumber' => self::floatToScaled($fs['productionW'])];
-            }
-            $calls[] = ['DeviceConfiguration', 'deviceConfigurationKeyValueListData', ['deviceConfigurationKeyValueData' => [
-                ['keyId' => self::KEY_FAILSAFE_CONSUMPTION, 'value' => ['scaledNumber' => self::floatToScaled($fs['consumptionW'])], 'isValueChangeable' => true],
-                ['keyId' => self::KEY_FAILSAFE_DURATION, 'value' => ['duration' => self::secondsToDuration($fs['durationS'])], 'isValueChangeable' => true],
-                $prod]]];
-        }
-
-        foreach ($calls as [$feature, $function, $data]) {
-            $r = json_decode($this->eebusCall(['Cmd' => 'SetData', 'Feature' => $feature, 'Function' => $function, 'Data' => $data]), true);
-            if (!is_array($r) || ($r['ok'] ?? false) !== true) {
-                $this->LogMessage(sprintf($this->Translate('EEBUS: data %s not accepted by the gateway: %s'), $function, is_array($r) ? ($r['error'] ?? '?') : $this->Translate('no response')), KL_WARNING);
-            }
-        }
-    }
-
-    private function eebusUpdateStatus(): void
-    {
-        if ($this->ReadPropertyInteger('Transport') !== 1) {
-            return;
-        }
-        $st = $this->eebusLoadState();
-        if ($this->eebusGatewayID() === 0) {
-            $status = 104;
-        } elseif ($st['registeredWith'] === 0 && $st['registerError'] !== '') {
-            $status = 203;
-        } elseif ($st['mode'] === 'failsafe' || $st['mode'] === 'autonomous') {
-            $status = 204;
-        } elseif ($st['mode'] === 'unpaired') {
-            $status = 210;
-        } else {
-            $status = 102;
-        }
-        if ($this->GetStatus() !== $status) {
-            $this->SetStatus($status);
-        }
-    }
-
-    /**
-     * Formular-Knopf: legt die Brücke SteuerboxHubEEBUS an, verbindet sie mit dem EEBUS-Gateway,
-     * wenn genau eines existiert, und trägt sie in die offene Maske ein (gespeichert erst mit
-     * „Übernehmen“). Rückgabe: Hinweistext fürs Formular (echo).
-     */
-    public function CreateEEBusBridge()
-    {
-        $id = IPS_CreateInstance(self::BRIDGE_MODULE_ID);
-        IPS_SetName($id, sprintf($this->Translate('EEBUS connector %s'), IPS_GetName($this->InstanceID)));
-        IPS_SetParent($id, IPS_GetParent($this->InstanceID));
-        $gws = array_values(array_filter((array) @IPS_GetInstanceListByModuleID(self::EEBGW_MODULE_ID), 'IPS_InstanceExists'));
-        if (count($gws) === 1) {
-            IPS_ConnectInstance($id, $gws[0]);
-            $text = sprintf($this->Translate('✅ EEBUS connector #%d created and connected to EEBUS gateway #%d.'), $id, $gws[0]);
-        } elseif ($gws === []) {
-            $text = sprintf($this->Translate('✅ EEBUS connector #%d created. No EEBUS gateway exists yet: first create an “NRG-Stack EEBUS Gateway”, then choose “Change gateway” on the connector.'), $id);
-        } else {
-            $text = sprintf($this->Translate('✅ EEBUS connector #%d created. Several EEBUS gateways: assign the right one on the connector with “Change gateway”.'), $id);
-        }
-        IPS_ApplyChanges($id);
-        $this->UpdateFormField('EEBusBridgeID', 'value', $id);
-        return $text . ' ' . $this->Translate('Click “Apply Changes” to save the selection.');
-    }
-
-    /** Formular: Statuszeilen des EEBus-Panels live füllen. */
-    private function injectEEBusStatus(array &$items): void
-    {
-        $lines = $this->eebusStatusLines();
-        foreach ($items as &$el) {
-            $name = $el['name'] ?? '';
-            if (isset($lines[$name])) {
-                $el['caption'] = $lines[$name]['caption'];
-                if (isset($lines[$name]['color'])) {
-                    $el['color'] = $lines[$name]['color'];
-                }
-            }
-            if (isset($el['items'])) {
-                $this->injectEEBusStatus($el['items']);
-            }
-        }
-        unset($el);
-    }
-
-    private function eebusStatusLines(): array
-    {
-        $st     = $this->eebusLoadState();
-        $bridge = $this->eebusBridgeID();
-        $parent = $this->eebusGatewayID();
-        $now    = $this->now();
-        $bridgeCount = count((array) @IPS_GetInstanceListByModuleID(self::BRIDGE_MODULE_ID));
-
-        if ($bridge === 0) {
-            $conn = $bridgeCount > 1 && $this->ReadPropertyInteger('EEBusBridgeID') === 0
-                ? '⚠️ Several EEBUS connectors exist: select the one you want below.'
-                : 'ℹ️ No EEBUS connector yet: click “Create EEBUS connector” below. It is connected to the EEBUS gateway (or assigned there with “Change gateway”). Without it this path delivers no signals.';
-        } elseif ($parent === 0) {
-            $conn = sprintf($this->Translate('ℹ️ EEBUS connector #%d is not attached to any NRG-Stack EEBUS Gateway: choose “Change gateway” there and assign the gateway (or create a new one).'), $bridge);
-        } elseif ($st['registeredWith'] === 0) {
-            $conn = sprintf($this->Translate('⚠️ Gateway #%d (%s) has not confirmed the registration: %s.'), $parent, IPS_GetName($parent), $st['registerError'] !== '' ? $st['registerError'] : $this->Translate('no response yet'));
-        } elseif ($st['trustPending']) {
-            $conn = sprintf($this->Translate('⚠️ Gateway #%d (%s): the control box has not yet released the gateway (ask the grid or metering point operator to enter the gateway SKI).'), $parent, IPS_GetName($parent));
-        } elseif ($st['connected']) {
-            $box = $st['remoteShipId'] !== '' ? $st['remoteShipId'] : '?';
-            $conn = $st['remoteUseCases'] !== []
-                ? sprintf($this->Translate('✅ Connected via connector #%d and gateway #%d (%s) to control box %s, offers %s; registered as entity %d (LPC and LPP).'),
-                    $bridge, $parent, IPS_GetName($parent), $box, implode('/', $st['remoteUseCases']), $st['entity'])
-                : sprintf($this->Translate('✅ Connected via connector #%d and gateway #%d (%s) to control box %s; registered as entity %d (LPC and LPP).'),
-                    $bridge, $parent, IPS_GetName($parent), $box, $st['entity']);
-        } else {
-            $conn = $st['lastAlive'] > 0
-                ? sprintf($this->Translate('⚠️ Registered with gateway #%d (%s), but currently no connection to the control box (last reachable %s).'), $parent, IPS_GetName($parent), $this->dt($st['lastAlive']))
-                : sprintf($this->Translate('⚠️ Registered with gateway #%d (%s), but currently no connection to the control box.'), $parent, IPS_GetName($parent));
-        }
-
-        $limitText = function (int $id) use ($st, $now): string {
-            $l = $st['limits'][$id];
-            if (!$l['active'] || ($l['until'] > 0 && $now >= $l['until'])) {
-                return $this->Translate('none');
-            }
-            return $l['until'] > 0
-                ? sprintf($this->Translate('%s kW until %s'), $this->fmt($l['w'] / 1000), $this->dt($l['until']))
-                : sprintf($this->Translate('%s kW (no time limit)'), $this->fmt($l['w'] / 1000));
-        };
-        switch ($parent === 0 ? 'none' : $st['mode']) {
-            case 'none':
-                $state = 'ℹ️ Without an EEBUS connector attached to a gateway, no limit applies.';
-                break;
-            case 'failsafe':
-                $fsEnd = $st['failsafeSince'] + $this->eebusFailsafeDuration($st);
-                $state = sprintf($this->Translate('⛔ Failsafe state since %s, at the latest until %s (or until the control box sends a new limit).'), $this->dt($st['failsafeSince']), $this->dt($fsEnd));
-                break;
-            case 'autonomous':
-                $state = '⚠️ Failure longer than the minimum duration: no limit until the control box is reachable again.';
-                break;
-            case 'unpaired':
-                $state = 'ℹ️ Never connected to a control box: no limit.';
-                break;
-            default:
-                $state = sprintf($this->Translate('Controlled by the control box. Consumption limit: %s. Feed-in limit: %s.'), $limitText(self::LIMIT_CONSUMPTION), $limitText(self::LIMIT_PRODUCTION));
-        }
-
-        $lines = [
-            'EEBusConnectionLine' => ['caption' => $conn],
-            'EEBusStateLine'      => ['caption' => $state],
-            'EEBusFailsafeLine'   => ['caption' => sprintf($this->Translate('Failsafe values: %s.'), $this->eebusFailsafeText($st))],
-        ];
-        $lines['EEBusProductionNominalLine'] = $this->ReadPropertyFloat('EEBusProductionNominalKw') > 0
-            ? ['caption' => sprintf($this->Translate('✏️ Reference value for the feed-in limit in percent: %s kWp (your own entry, must match the PV capacity in the EMS).'), $this->fmt($this->ReadPropertyFloat('EEBusProductionNominalKw')))]
-            : ['caption' => '⛔ Mandatory once the control box limits feed-in: without the PV capacity SteuerboxHub reports 0 % (no feed-in) for every feed-in limit, because watts cannot be converted into percent.', 'color' => 0xFF0000];
-        return $lines;
-    }
-
-    // --- Zahlen- und Zeitformate (SPINE) ---
-
-    private static function scaledToFloat(array $v): float
-    {
-        return (float) ($v['number'] ?? 0) * (10 ** (int) ($v['scale'] ?? 0));
-    }
-
-    private static function floatToScaled(float $w): array
-    {
-        return ['number' => (int) round($w), 'scale' => 0];
-    }
-
-    /** ISO-8601-Dauer (z. B. PT1H2M3S, P1D) in Sekunden, 0 bei Fehler. */
-    private static function durationToSeconds(string $iso): int
-    {
-        if (!preg_match('/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/', $iso, $m)) {
-            return 0;
-        }
-        return (int) ((int) ($m[1] ?? 0) * 86400 + (int) ($m[2] ?? 0) * 3600 + (int) ($m[3] ?? 0) * 60 + (float) ($m[4] ?? 0));
-    }
-
-    private static function secondsToDuration(int $s): string
-    {
-        $h = intdiv($s, 3600);
-        $m = intdiv($s % 3600, 60);
-        $r = $s % 60;
-        return 'PT' . ($h > 0 ? $h . 'H' : '') . ($m > 0 ? $m . 'M' : '') . ($r > 0 || $s === 0 ? $r . 'S' : '');
-    }
-
-    /** endTime ist relativ (Dauer ab Empfang) oder ein absoluter Zeitpunkt; Rückgabe Sekunden ab jetzt. */
-    private static function endTimeToSeconds(string $endTime, int $now): int
-    {
-        if (str_starts_with($endTime, 'P')) {
-            return self::durationToSeconds($endTime);
-        }
-        $ts = strtotime($endTime);
-        return $ts === false ? 0 : max(1, $ts - $now);
-    }
-
-    /** Zahl mit Dezimaltrenner der Symcon-Sprache (Komma auf Deutsch, Punkt sonst). */
-    private function fmt(float $v): string
-    {
-        $sep = $this->Translate('decimal separator') === ',' ? ',' : '.';
-        return rtrim(rtrim(number_format($v, 2, $sep, ''), '0'), $sep);
-    }
-
-    /** Zeitpunkt in der Schreibweise der Symcon-Sprache (Deutsch: TT.MM.JJJJ HH:MM). */
-    private function dt(int $ts): string
-    {
-        return date($this->Translate('Y-m-d H:i'), $ts);
-    }
-
-    /** Zeitquelle (im Prüfstand ersetzbar). */
-    protected function now(): int
-    {
-        return time();
     }
 }
