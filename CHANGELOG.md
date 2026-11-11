@@ -3,6 +3,29 @@
 Alle nennenswerten Änderungen an diesem Modul werden hier dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
+## [0.6.0] - 2026-11-11
+
+### Changed
+- **EEBUS ist ein eigenes Modul**: „NRG-Stack SteuerboxHub EEBUS“ (`SteuerboxHubEEBUS`, Präfix `SBHE`,
+  GUID unverändert) ist der volle EEBUS-Steuerhub und hängt direkt am NRG-Stack EEBUS-Gateway
+  (Datenfluss `SendDataToParent`/`ReceiveData`). Die Brücke zwischen Hub und Gateway entfällt. Grund:
+  Store-Review vom 11.11.2026 (Instanzen sollen über den Datenfluss statt über öffentliche Funktionen
+  sprechen). Die frühere Instanz „SteuerboxHub EEBUS-Anbindung“ wird zum EEBUS-Hub.
+- **SteuerboxHub** (Kontakte) behandelt nur noch den Kontakte-Weg und bleibt ohne Elternteil. Eine
+  Instanz mit Transportweg EEBUS zeigt einen Hinweis und liefert kein Signal; ihre Eigenschaften
+  bleiben registriert.
+- Gemeinsame Oberklasse `libs/SteuerboxHubBase.php` (Formular-Konvention, Pmin-Rechenhilfe, Zahlen-
+  und Zeitformat) für beide Module.
+
+### Added
+- Vertrag **`SBHE_GetState`** (EEBUS-Hub): gleiche Felder und `contractVersion 1.0` wie `SBH_GetState`,
+  `source: eebus`. Das EMS liest beide Funktionen, jeweils hinter `function_exists`.
+
+### Removed
+- Öffentliche Funktionen der Hub-Brücke-Kopplung: `SBH_ProcessEEBus`, `SBH_CreateEEBusBridge`,
+  `SBH_ToggleTransport`, `SBHE_Forward`. `SBH_CheckEEBus` bleibt als wirkungslose Altlast für Timer
+  bestehender Instanzen.
+
 ## [0.5.0] - 2026-11-05
 
 ### Added

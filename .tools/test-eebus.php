@@ -756,6 +756,19 @@ $t2 = $k2->GetState();
 pruefe(array_keys($t1) === $kontrakt && array_keys($t2) === $kontrakt && array_map('gettype', $t1) === array_map('gettype', $t2) && $t1['source'] === 'contacts' && $t2['source'] === 'eebus' && $t1['contractVersion'] === '1.0' && $t2['contractVersion'] === '1.0',
     'Vertrag 1.0: SBH_GetState (Kontakte) und SBHE_GetState (EEBUS) liefern dieselben Felder und Typen');
 
+// Kompatibilität zu 0.5.0: Eigenschaften, Attribute und Funktionen des Kontakte-Hubs bleiben bestehen, auch wenn sie
+// jetzt in der Oberklasse stehen. Entfernt sind absichtlich nur die Funktionen der früheren Hub-Brücke-Kopplung.
+$k = sbh(35210, 0, []);
+$props050 = ['Transport', 'LoadContactVarID', 'LoadContactInverted', 'LoadPMin', 'GZFConsumerCount', 'GZFFactor', 'FeedInMode', 'FeedInContactVarID', 'FeedInContactInverted', 'FeedInLimitPercent', 'FeedInW3VarID', 'FeedInS1VarID', 'FeedInS2VarID', 'FeedInFNNInverted', 'WatchdogTimeout', 'EEBusBridgeID', 'FormLayout', 'EEBusBridgeURL', 'EEBusSKI', 'EEBusConsumptionNominalKw', 'EEBusProductionNominalKw', 'EEBusFailsafeProductionKw'];
+$attrs050 = ['LoadDimmActive', 'LoadSince', 'FeedInDimmActive', 'FeedInSince', 'LoadLastSeen', 'FeedInLastSeen', 'FeedInPercent', 'EEBusState', 'PurposeIntroGone', 'SeenNews', 'ForumHintGone'];
+$funcs050 = ['AckPurposeIntro', 'AckNews', 'AckForumHint', 'ToggleFeedInMode', 'ResetFormLayout', 'CheckWatchdog', 'CalculateGZF', 'GetState', 'CheckEEBus'];
+$fehltP = array_values(array_diff($props050, array_keys($k->props)));
+$fehltA = array_values(array_diff($attrs050, array_keys($k->attrs)));
+$fehltF = array_values(array_filter($funcs050, function ($f) { return !method_exists(SteuerboxHub::class, $f) || !(new ReflectionMethod(SteuerboxHub::class, $f))->isPublic(); }));
+pruefe($fehltP === [] && $fehltA === [] && $fehltF === [], 'Kompatibilität 0.5.0: alle Eigenschaften, Attribute und öffentlichen Funktionen des Kontakte-Hubs bestehen weiter' . ($fehltP || $fehltA || $fehltF ? ' — fehlt: ' . implode(', ', array_merge($fehltP, $fehltA, $fehltF)) : ''));
+$entfernt = ['ToggleTransport', 'ProcessEEBus', 'CreateEEBusBridge'];
+pruefe(array_filter($entfernt, function ($f) { return method_exists(SteuerboxHub::class, $f); }) === [] && !method_exists(SteuerboxHubEEBUS::class, 'Forward'), 'Entfernt sind nur die Funktionen der früheren Hub-Brücke-Kopplung (ToggleTransport, ProcessEEBus, CreateEEBusBridge, Forward)');
+
 echo " Ohne Gateway keine Begrenzung, neues Gateway beginnt neu (Live-Fund 27.10.2026)\n";
 $gw7 = new FakeGateway(37000);
 $gw7->state['connected'] = true;
