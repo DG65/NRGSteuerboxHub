@@ -97,7 +97,7 @@ Fragen, Erfahrungen und Rückmeldungen gern im Forum:
 | `failsafeDurationSec` | int | Mindestdauer des Ausfallzustands in s (EEBUS 7200 bis 86400; Kontakte 0 = kein Ausfallzustand, der Wächter hält den letzten Zustand) |
 | `lastSeenAt` | int | Unix-Zeitpunkt des letzten Lebenszeichens bzw. letzten Kontaktwechsels (0 = noch nie) |
 
-Ab 1.1 kommen die letzten sechs Felder additiv dazu; ältere Konsumenten ignorieren sie. Eine Anleitung für eigene Module: [docs/EIGENE_STEUERBOX.md](docs/EIGENE_STEUERBOX.md).
+Ab 1.1 kommen die letzten sechs Felder additiv dazu; ältere Konsumenten ignorieren sie. Eine Anleitung für eigene Module: [docs/EIGENE_STEUERBOX.md](EIGENE_STEUERBOX.md).
 
 Beim Aufrufer (EMS) stets hinter `function_exists('SBH_GetState')` bzw. `function_exists('SBHE_GetState')`.
 

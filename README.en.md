@@ -96,7 +96,7 @@ Questions, experiences and feedback are welcome in the forum:
 | `failsafeDurationSec` | int | minimum duration of the failure state in s (EEBUS 7200 to 86400; contacts 0 = no failure state, the watchdog keeps the last state) |
 | `lastSeenAt` | int | Unix time of the last heartbeat or last contact change (0 = never) |
 
-From 1.1 the last six fields are added; older consumers ignore them. A guide for your own modules: [docs/EIGENE_STEUERBOX.en.md](docs/EIGENE_STEUERBOX.en.md).
+From 1.1 the last six fields are added; older consumers ignore them. A guide for your own modules: [docs/EIGENE_STEUERBOX.en.md](EIGENE_STEUERBOX.en.md).
 
 On the caller side (EMS) always behind `function_exists('SBH_GetState')` or `function_exists('SBHE_GetState')`.
 
