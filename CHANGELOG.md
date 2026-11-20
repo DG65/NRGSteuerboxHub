@@ -7,7 +7,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ### Added
 - Vertrag **1.1** (additiv, ohne Bruch) in `SBH_GetState` und `SBHE_GetState`: `contractType` (`steuerbox`),
-  `failsafeActive`, `failsafeLoadPMin`, `failsafeFeedInLimitPercent`, `failsafeSec`, `lastSeenAt`. Damit kann auch
+  `failsafeActive`, `failsafeLoadPMin`, `failsafeFeedInLimitPercent`, `failsafeDurationSec`, `lastSeenAt`. Damit kann auch
   ein fremdes Steuerbox-Modul mit derselben Sicherheit konsumiert werden (Fremdanbindung, SUITE.md).
 - Anleitung für eigene Steuerbox-Module: `docs/EIGENE_STEUERBOX.md` und `docs/EIGENE_STEUERBOX.en.md`.
 

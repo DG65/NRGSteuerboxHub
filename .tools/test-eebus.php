@@ -751,7 +751,7 @@ pruefe($verstoesse === [], 'Öffentliche SBH_/SBHE_-Funktionen: keine Standardwe
 $k1 = sbh(35200, 0, []);
 $k2 = sbh(35201, 0, ['Transport' => 1]);
 $kontrakt = ['contractVersion', 'source', 'loadDimmActive', 'loadPMin', 'loadSince', 'feedInDimmActive', 'feedInLimitPercent', 'feedInSince',
-    'contractType', 'failsafeActive', 'failsafeLoadPMin', 'failsafeFeedInLimitPercent', 'failsafeSec', 'lastSeenAt'];
+    'contractType', 'failsafeActive', 'failsafeLoadPMin', 'failsafeFeedInLimitPercent', 'failsafeDurationSec', 'lastSeenAt'];
 $t1 = $k1->GetState();
 $t2 = $k2->GetState();
 pruefe(array_keys($t1) === $kontrakt && array_keys($t2) === $kontrakt && array_map('gettype', $t1) === array_map('gettype', $t2) && $t1['source'] === 'contacts' && $t2['source'] === 'eebus' && $t1['contractVersion'] === '1.1' && $t2['contractVersion'] === '1.1' && $t1['contractType'] === 'steuerbox',
@@ -782,7 +782,7 @@ vor(4000);
 $r7->CheckEEBus();
 pruefe($r7->GetState()['loadPMin'] === 13.02 && $r7->status === 204, 'Ausgangslage: Steuerbox weg, Ausfallgrenze 13,02 kW');
 $g7 = $r7->GetState();
-pruefe($g7['failsafeActive'] === true && $g7['failsafeLoadPMin'] === 13.02 && $g7['failsafeSec'] === 7200 && $g7['failsafeFeedInLimitPercent'] === null && $g7['lastSeenAt'] > 0 && $g7['contractType'] === 'steuerbox',
+pruefe($g7['failsafeActive'] === true && $g7['failsafeLoadPMin'] === 13.02 && $g7['failsafeDurationSec'] === 7200 && $g7['failsafeFeedInLimitPercent'] === null && $g7['lastSeenAt'] > 0 && $g7['contractType'] === 'steuerbox',
     'Vertrag 1.1 im Ausfall: failsafeActive, Ausfallgrenze, Mindestdauer 7200 s, Einspeisegrenze unbekannt (null), lastSeenAt');
 $r7->parentId = 0;
 $r7->ApplyChanges();

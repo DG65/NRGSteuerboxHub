@@ -23,7 +23,7 @@ liefert nur das Signal; durchsetzen tut das EMS.
 | `failsafeActive` | bool | Steuerbox unerreichbar, Ausfallgrenze gilt |
 | `failsafeLoadPMin` | float | Bezugsgrenze im Ausfall in kW |
 | `failsafeFeedInLimitPercent` | float oder null | Einspeisegrenze im Ausfall in %, `null` = unbekannt |
-| `failsafeSec` | int | Mindestdauer des Ausfallzustands in s (0 = keiner) |
+| `failsafeDurationSec` | int | Mindestdauer des Ausfallzustands in s (0 = keiner) |
 | `lastSeenAt` | int | Unix-Zeit des letzten Lebenszeichens |
 
 3. Ohne Signal und ohne Ausfall: alles inaktiv, `loadPMin` 0, `feedInLimitPercent` 100.

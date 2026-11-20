@@ -93,7 +93,7 @@ Questions, experiences and feedback are welcome in the forum:
 | `failsafeActive` | bool | control box unreachable (EEBUS: 120 s without a heartbeat), the failsafe limit applies now |
 | `failsafeLoadPMin` | float | consumption limit during the failure in kW (EEBUS: taken from the control box, else `LoadPMin`; contacts: 0) |
 | `failsafeFeedInLimitPercent` | float or null | feed-in limit during the failure in %; `null` = unknown or no failure state |
-| `failsafeSec` | int | minimum duration of the failure state in s (EEBUS 7200 to 86400; contacts 0 = no failure state, the watchdog keeps the last state) |
+| `failsafeDurationSec` | int | minimum duration of the failure state in s (EEBUS 7200 to 86400; contacts 0 = no failure state, the watchdog keeps the last state) |
 | `lastSeenAt` | int | Unix time of the last heartbeat or last contact change (0 = never) |
 
 From 1.1 the last six fields are added; older consumers ignore them. A guide for your own modules: [docs/EIGENE_STEUERBOX.en.md](docs/EIGENE_STEUERBOX.en.md).

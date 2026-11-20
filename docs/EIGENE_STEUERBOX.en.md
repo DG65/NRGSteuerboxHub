@@ -23,7 +23,7 @@ only delivers the signal; the EMS enforces it.
 | `failsafeActive` | bool | control box unreachable, failsafe limit applies |
 | `failsafeLoadPMin` | float | consumption limit during the failure in kW |
 | `failsafeFeedInLimitPercent` | float or null | feed-in limit during the failure in %, `null` = unknown |
-| `failsafeSec` | int | minimum duration of the failure state in s (0 = none) |
+| `failsafeDurationSec` | int | minimum duration of the failure state in s (0 = none) |
 | `lastSeenAt` | int | Unix time of the last heartbeat |
 
 3. Without a signal and without a failure: everything inactive, `loadPMin` 0, `feedInLimitPercent` 100.

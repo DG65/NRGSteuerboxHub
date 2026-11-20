@@ -94,7 +94,7 @@ Fragen, Erfahrungen und Rückmeldungen gern im Forum:
 | `failsafeActive` | bool | Steuerbox unerreichbar (EEBUS: 120 s ohne Lebenszeichen), die Ausfallgrenze gilt gerade |
 | `failsafeLoadPMin` | float | Bezugsgrenze im Ausfall in kW (EEBUS: von der Steuerbox übernommen, sonst `LoadPMin`; Kontakte: 0) |
 | `failsafeFeedInLimitPercent` | float oder null | Einspeisegrenze im Ausfall in %; `null` = unbekannt oder kein Ausfallzustand |
-| `failsafeSec` | int | Mindestdauer des Ausfallzustands in s (EEBUS 7200 bis 86400; Kontakte 0 = kein Ausfallzustand, der Wächter hält den letzten Zustand) |
+| `failsafeDurationSec` | int | Mindestdauer des Ausfallzustands in s (EEBUS 7200 bis 86400; Kontakte 0 = kein Ausfallzustand, der Wächter hält den letzten Zustand) |
 | `lastSeenAt` | int | Unix-Zeitpunkt des letzten Lebenszeichens bzw. letzten Kontaktwechsels (0 = noch nie) |
 
 Ab 1.1 kommen die letzten sechs Felder additiv dazu; ältere Konsumenten ignorieren sie. Eine Anleitung für eigene Module: [docs/EIGENE_STEUERBOX.md](docs/EIGENE_STEUERBOX.md).
