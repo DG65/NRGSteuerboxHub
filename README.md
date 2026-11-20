@@ -76,7 +76,7 @@ Fragen, Erfahrungen und Rückmeldungen gern im Forum:
 - **Hubs** bieten Stellhebel und führen je Gerät aus (z. B. HeishaMon: Heizstab sperren + Quiet
   Mode als §14a-Hebel, ChargerHub: Ladepunkt-Budget senken).
 
-## Vertrag `SBH_GetState($id): array` und `SBHE_GetState($id): array` (contractVersion 1.0)
+## Vertrag `SBH_GetState($id): array` und `SBHE_GetState($id): array` (contractVersion 1.1)
 
 `SBH_GetState` liefert der Kontakte-Hub (`source: contacts`), `SBHE_GetState` der EEBUS-Hub
 (`source: eebus`). Beide liefern dieselben Felder:
@@ -90,6 +90,14 @@ Fragen, Erfahrungen und Rückmeldungen gern im Forum:
 | `feedInDimmActive` | bool | Einspeisegrenze wirksam |
 | `feedInLimitPercent` | float | Erlaubte Einspeisung in % (100 = unbegrenzt); bei EEBUS bezogen auf die eingetragene installierte PV-Leistung (kWp, wie im EMS) |
 | `feedInSince` | int | Unix-Zeitpunkt, seit dem die Einspeisegrenze gilt (0 = keine) |
+| `contractType` | string | immer `steuerbox` (Selbstbeschreibung für Konsumenten, auch fremde) |
+| `failsafeActive` | bool | Steuerbox unerreichbar (EEBUS: 120 s ohne Lebenszeichen), die Ausfallgrenze gilt gerade |
+| `failsafeLoadPMin` | float | Bezugsgrenze im Ausfall in kW (EEBUS: von der Steuerbox übernommen, sonst `LoadPMin`; Kontakte: 0) |
+| `failsafeFeedInLimitPercent` | float oder null | Einspeisegrenze im Ausfall in %; `null` = unbekannt oder kein Ausfallzustand |
+| `failsafeSec` | int | Mindestdauer des Ausfallzustands in s (EEBUS 7200 bis 86400; Kontakte 0 = kein Ausfallzustand, der Wächter hält den letzten Zustand) |
+| `lastSeenAt` | int | Unix-Zeitpunkt des letzten Lebenszeichens bzw. letzten Kontaktwechsels (0 = noch nie) |
+
+Ab 1.1 kommen die letzten sechs Felder additiv dazu; ältere Konsumenten ignorieren sie. Eine Anleitung für eigene Module: [docs/EIGENE_STEUERBOX.md](docs/EIGENE_STEUERBOX.md).
 
 Beim Aufrufer (EMS) stets hinter `function_exists('SBH_GetState')` bzw. `function_exists('SBHE_GetState')`.
 

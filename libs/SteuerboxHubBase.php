@@ -370,4 +370,20 @@ abstract class SteuerboxHubBase extends IPSModule
     {
         return time();
     }
+
+    /**
+     * Gemeinsame Felder des Vertrags 1.1 (additiv zu 1.0): Selbstbeschreibung und Ausfallverhalten.
+     * failsafeSec 0 = kein Ausfallzustand (Kontakte); failsafeFeedInLimitPercent null = unbekannt.
+     */
+    protected function contractExtras(bool $failsafeActive, float $failsafeLoadPMin, ?float $failsafeFeedInPercent, int $failsafeSec, int $lastSeenAt): array
+    {
+        return [
+            'contractType'              => 'steuerbox',
+            'failsafeActive'            => $failsafeActive,
+            'failsafeLoadPMin'          => $failsafeLoadPMin,
+            'failsafeFeedInLimitPercent' => $failsafeFeedInPercent,
+            'failsafeSec'               => $failsafeSec,
+            'lastSeenAt'                => $lastSeenAt,
+        ];
+    }
 }

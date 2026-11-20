@@ -75,7 +75,7 @@ Questions, experiences and feedback are welcome in the forum:
 - **Hubs** offer actuators and execute per device (e.g. HeishaMon: block the heating element +
   quiet mode as §14a levers, ChargerHub: lower the charging point budget).
 
-## Contract `SBH_GetState($id): array` and `SBHE_GetState($id): array` (contractVersion 1.0)
+## Contract `SBH_GetState($id): array` and `SBHE_GetState($id): array` (contractVersion 1.1)
 
 `SBH_GetState` comes from the contacts hub (`source: contacts`), `SBHE_GetState` from the EEBUS hub
 (`source: eebus`). Both return the same fields:
@@ -89,6 +89,14 @@ Questions, experiences and feedback are welcome in the forum:
 | `feedInDimmActive` | bool | feed-in limit in effect |
 | `feedInLimitPercent` | float | permitted feed-in in % (100 = unlimited); with EEBUS related to the entered installed PV capacity (kWp, as in the EMS) |
 | `feedInSince` | int | Unix time since which the feed-in limit applies (0 = none) |
+| `contractType` | string | always `steuerbox` (self-description for consumers, including third-party ones) |
+| `failsafeActive` | bool | control box unreachable (EEBUS: 120 s without a heartbeat), the failsafe limit applies now |
+| `failsafeLoadPMin` | float | consumption limit during the failure in kW (EEBUS: taken from the control box, else `LoadPMin`; contacts: 0) |
+| `failsafeFeedInLimitPercent` | float or null | feed-in limit during the failure in %; `null` = unknown or no failure state |
+| `failsafeSec` | int | minimum duration of the failure state in s (EEBUS 7200 to 86400; contacts 0 = no failure state, the watchdog keeps the last state) |
+| `lastSeenAt` | int | Unix time of the last heartbeat or last contact change (0 = never) |
+
+From 1.1 the last six fields are added; older consumers ignore them. A guide for your own modules: [docs/EIGENE_STEUERBOX.en.md](docs/EIGENE_STEUERBOX.en.md).
 
 On the caller side (EMS) always behind `function_exists('SBH_GetState')` or `function_exists('SBHE_GetState')`.
 

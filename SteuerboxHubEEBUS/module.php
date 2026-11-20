@@ -9,7 +9,7 @@
 // den Datenfluss (Kind-Schnittstelle 1.0, SendDataToParent/ReceiveData) als Entität
 // mit den Anwendungsfällen LPC und LPP in der Rolle "ControllableSystem" an, liefert
 // die Feature-Daten und übersetzt Schreibbefehle und Heartbeat-Ausfall in den Vertrag
-// SBHE_GetState (gleiche Felder wie SBH_GetState, contractVersion 1.0, source 'eebus').
+// SBHE_GetState (gleiche Felder wie SBH_GetState, contractVersion 1.1, source 'eebus').
 // Das Gateway kennt keine §14a-Logik, die Zustandsmaschine (gesteuert / Ausfall /
 // autonom) liegt hier.
 //
@@ -149,14 +149,16 @@ class SteuerboxHubEEBUS extends SteuerboxHubBase
         return '';
     }
 
-    // Vertrag für das EMS: gleiche Felder wie SBH_GetState (SteuerboxHub, Kontakte), contractVersion 1.0.
+    // Vertrag für das EMS: gleiche Felder wie SBH_GetState (SteuerboxHub, Kontakte), contractVersion 1.1 (additiv: contractType, Failsafe-Felder, lastSeenAt).
     // Immer hinter function_exists('SBHE_GetState') beim Aufrufer (EMS).
     public function GetState(): array
     {
         // Wirkung zum Abrufzeitpunkt (abgelaufene Befristung zählt sofort nicht mehr).
         $eff = $this->eebusRefresh();
+        $st  = $this->eebusLoadState();
+        $fs  = $this->eebusFailsafeValues($st);
         return [
-            'contractVersion'    => '1.0',
+            'contractVersion'    => '1.1',
             'source'             => 'eebus',
             'loadDimmActive'     => $eff['loadActive'],
             'loadPMin'           => $eff['loadActive'] ? round($eff['loadW'] / 1000, 3) : 0.0,
@@ -164,7 +166,13 @@ class SteuerboxHubEEBUS extends SteuerboxHubBase
             'feedInDimmActive'   => $eff['feedInActive'],
             'feedInLimitPercent' => $eff['feedInActive'] ? $eff['feedInPercent'] : 100.0,
             'feedInSince'        => (int) $this->ReadAttributeInteger('FeedInSince'),
-        ];
+        ] + $this->contractExtras(
+            $st['mode'] === 'failsafe',
+            round($fs['consumptionW'] / 1000, 3),
+            $fs['productionW'] !== null ? $this->eebusPercent($fs['productionW']) : null,
+            $fs['durationS'],
+            (int) $st['lastAlive']
+        );
     }
 
     protected function prepareForm(array &$form): void

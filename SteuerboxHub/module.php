@@ -407,7 +407,7 @@ class SteuerboxHub extends SteuerboxHubBase
         // Früherer EEBUS-Weg (Transport 1): hier kein Signal, EEBUS steht in SBHE_GetState.
         if ($this->ReadPropertyInteger('Transport') !== 0) {
             return [
-                'contractVersion'    => '1.0',
+                'contractVersion'    => '1.1',
                 'source'             => 'eebus',
                 'loadDimmActive'     => false,
                 'loadPMin'           => 0.0,
@@ -415,14 +415,14 @@ class SteuerboxHub extends SteuerboxHubBase
                 'feedInDimmActive'   => false,
                 'feedInLimitPercent' => 100.0,
                 'feedInSince'        => 0,
-            ];
+            ] + $this->contractExtras(false, 0.0, null, 0, 0);
         }
 
         $loadActive   = (bool) $this->ReadAttributeBoolean('LoadDimmActive');
         $feedInActive = (bool) $this->ReadAttributeBoolean('FeedInDimmActive');
 
         return [
-            'contractVersion'    => '1.0',
+            'contractVersion'    => '1.1',
             'source'             => 'contacts',
             'loadDimmActive'     => $loadActive,
             'loadPMin'           => (float) $this->ReadPropertyFloat('LoadPMin'),
@@ -432,6 +432,12 @@ class SteuerboxHub extends SteuerboxHubBase
                 ? (float) $this->ReadAttributeFloat('FeedInPercent')
                 : ($feedInActive ? (float) $this->ReadPropertyFloat('FeedInLimitPercent') : 100.0),
             'feedInSince'        => (int) $this->ReadAttributeInteger('FeedInSince'),
-        ];
+        ] + $this->contractExtras(
+            false,
+            0.0,
+            null,
+            0,
+            max((int) $this->ReadAttributeInteger('LoadLastSeen'), (int) $this->ReadAttributeInteger('FeedInLastSeen'))
+        );
     }
 }

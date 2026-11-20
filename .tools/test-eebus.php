@@ -335,7 +335,7 @@ echo " Eigenständigkeit\n";
 $solo = sbh(30001, 0, ['Transport' => 1]);
 $st = $solo->GetState();
 pruefe($solo->status === 104, 'EEBUS ohne Gateway: Status 104 (inaktiv, kein Fehler)');
-pruefe($st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feedInLimitPercent'] === 100.0 && $st['contractVersion'] === '1.0', 'EEBUS ohne Gateway: GetState liefert „keine Begrenzung“, Vertrag 1.0');
+pruefe($st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feedInLimitPercent'] === 100.0 && $st['contractVersion'] === '1.1' && $st['contractType'] === 'steuerbox' && $st['failsafeActive'] === false, 'EEBUS ohne Gateway: GetState liefert „keine Begrenzung“, Vertrag 1.1');
 $solo->CheckEEBus();
 pruefe($solo->status === 104, 'Timer ohne Gateway: läuft ohne Fehler durch');
 $f = json_encode(json_decode($solo->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
@@ -649,7 +649,7 @@ $alt = sbh(34100, 0, []);
 $alt->props['Transport'] = 1;
 $alt->ApplyChanges();
 $st = $alt->GetState();
-pruefe($alt->status === 104 && $st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feedInLimitPercent'] === 100.0 && $st['contractVersion'] === '1.0', 'Altinstanz auf EEBUS: Status 104 (neutral), keine Begrenzung, Vertrag unverändert');
+pruefe($alt->status === 104 && $st['source'] === 'eebus' && $st['loadDimmActive'] === false && $st['feedInLimitPercent'] === 100.0 && $st['contractVersion'] === '1.1', 'Altinstanz auf EEBUS: Status 104 (neutral), keine Begrenzung, Vertrag unverändert');
 $f = json_encode(json_decode($alt->GetConfigurationForm(), true), JSON_UNESCAPED_UNICODE);
 pruefe(strpos($f, 'steht noch auf dem früheren Transportweg EEBUS') !== false && strpos($f, 'SBHE_GetState') !== false, 'Altinstanz: Formular weist auf das neue EEBUS-Modul hin');
 $alt->CheckEEBus();
@@ -671,7 +671,7 @@ pruefe(strpos($caps[1], '0.6.0') !== false, 'News-Panel nennt die höchste neue 
 $lic = json_encode($form["elements"][count($caps) - 1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($lic, '"link":true') !== false && strpos($lic, "echo 'https://github.com/DG65/NRGSteuerboxHub/blob/beta/LICENSE'") !== false, 'Lizenz-Knopf: echo-URL mit link=true, Branch beta');
 $doc = json_encode($form['elements'][2], JSON_UNESCAPED_UNICODE);
-pruefe(strpos($doc, 'SteuerboxHub Version 0.6.0 (Build 8)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
+pruefe(strpos($doc, 'SteuerboxHub Version 0.7.0 (Build 9)') !== false, 'Dokumentation & Hilfe zeigt Version und Build');
 $fh = json_encode($form['elements'][count($caps) - 2], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 pruefe(strpos($fh, "echo 'https://community.symcon.de/t/beta-tester-gesucht-nrg-stack-eebus-gateway-steuerboxhub-14a-steuerbox-per-eebus-in-reinem-php/144795'") !== false && strpos($fh, 'Zum Forums-Thread') < strpos($fh, 'GitHub'), 'Rückmeldungen: Forums-Thread zuerst, GitHub-Issues als zweiter Knopf');
 $fk->AckPurposeIntro();
@@ -679,7 +679,7 @@ $fk->AckNews();
 $fk->AckForumHint();
 $caps2 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 pruefe(strpos($caps2[0], 'Dokumentation') !== false && strpos(implode('|', $caps2), 'Rückmeldungen') === false && strpos(implode('|', $caps2), 'Über dieses Modul') !== false, 'Nach Bestätigen: Wozu/Neu/Rückmeldungen weg, Lizenz bleibt');
-pruefe($fk->attrs['SeenNews'] === '0.6.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.6.0) und blendet sofort aus');
+pruefe($fk->attrs['SeenNews'] === '0.7.0' && ($fk->form['NewsPanel']['visible'] ?? null) === false, 'AckNews speichert die installierte Version (0.7.0) und blendet sofort aus');
 $fk->attrs['SeenNews'] = '0.4.0';
 $caps3 = array_map(function ($e) { return $e['caption'] ?? ''; }, json_decode($fk->GetConfigurationForm(), true)['elements']);
 $news = json_encode(json_decode($fk->GetConfigurationForm(), true)['elements'][0], JSON_UNESCAPED_UNICODE);
@@ -750,11 +750,12 @@ foreach ([SteuerboxHub::class, SteuerboxHubEEBUS::class, SteuerboxHubBase::class
 pruefe($verstoesse === [], 'Öffentliche SBH_/SBHE_-Funktionen: keine Standardwerte, alle Parameter typisiert (Stolperstein 8/20)' . ($verstoesse ? ': ' . implode(', ', $verstoesse) : ''));
 $k1 = sbh(35200, 0, []);
 $k2 = sbh(35201, 0, ['Transport' => 1]);
-$kontrakt = ['contractVersion', 'source', 'loadDimmActive', 'loadPMin', 'loadSince', 'feedInDimmActive', 'feedInLimitPercent', 'feedInSince'];
+$kontrakt = ['contractVersion', 'source', 'loadDimmActive', 'loadPMin', 'loadSince', 'feedInDimmActive', 'feedInLimitPercent', 'feedInSince',
+    'contractType', 'failsafeActive', 'failsafeLoadPMin', 'failsafeFeedInLimitPercent', 'failsafeSec', 'lastSeenAt'];
 $t1 = $k1->GetState();
 $t2 = $k2->GetState();
-pruefe(array_keys($t1) === $kontrakt && array_keys($t2) === $kontrakt && array_map('gettype', $t1) === array_map('gettype', $t2) && $t1['source'] === 'contacts' && $t2['source'] === 'eebus' && $t1['contractVersion'] === '1.0' && $t2['contractVersion'] === '1.0',
-    'Vertrag 1.0: SBH_GetState (Kontakte) und SBHE_GetState (EEBUS) liefern dieselben Felder und Typen');
+pruefe(array_keys($t1) === $kontrakt && array_keys($t2) === $kontrakt && array_map('gettype', $t1) === array_map('gettype', $t2) && $t1['source'] === 'contacts' && $t2['source'] === 'eebus' && $t1['contractVersion'] === '1.1' && $t2['contractVersion'] === '1.1' && $t1['contractType'] === 'steuerbox',
+    'Vertrag 1.1: SBH_GetState (Kontakte) und SBHE_GetState (EEBUS) liefern dieselben Felder und Typen');
 
 // Kompatibilität zu 0.5.0: Eigenschaften, Attribute und Funktionen des Kontakte-Hubs bleiben bestehen, auch wenn sie
 // jetzt in der Oberklasse stehen. Entfernt sind absichtlich nur die Funktionen der früheren Hub-Brücke-Kopplung.
@@ -780,6 +781,9 @@ $gw7->ereignis(['Event' => 'connection', 'state' => 'disconnected']);
 vor(4000);
 $r7->CheckEEBus();
 pruefe($r7->GetState()['loadPMin'] === 13.02 && $r7->status === 204, 'Ausgangslage: Steuerbox weg, Ausfallgrenze 13,02 kW');
+$g7 = $r7->GetState();
+pruefe($g7['failsafeActive'] === true && $g7['failsafeLoadPMin'] === 13.02 && $g7['failsafeSec'] === 7200 && $g7['failsafeFeedInLimitPercent'] === null && $g7['lastSeenAt'] > 0 && $g7['contractType'] === 'steuerbox',
+    'Vertrag 1.1 im Ausfall: failsafeActive, Ausfallgrenze, Mindestdauer 7200 s, Einspeisegrenze unbekannt (null), lastSeenAt');
 $r7->parentId = 0;
 $r7->ApplyChanges();
 $st = $r7->GetState();
