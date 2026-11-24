@@ -1,6 +1,7 @@
 {
   "translations": {
     "de": {
+      "SteuerboxHubEEBUS": "NRG-Stack SteuerboxHub EEBUS",
       "📖 Documentation & Help": "📖 Dokumentation & Hilfe",
       "Two independent axes: “Load” (limiting controllable consumers such as wallbox, heat pump, storage) and “Feed-in” (reducing PV feed-in; self-consumption and battery charging are not affected).": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt).",
       "Minimum power under §14a (Pmin)": "Mindestleistung nach §14a (Pmin)",

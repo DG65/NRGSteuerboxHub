@@ -1,6 +1,7 @@
 {
   "translations": {
     "de": {
+      "SteuerboxHub": "NRG-Stack SteuerboxHub",
       "📖 Documentation & Help": "📖 Dokumentation & Hilfe",
       "SteuerboxHub only captures the §14a EnWG control signal from the grid operator and publishes it via SBH_GetState. It does not control anything itself; the EMS derives setpoints from it for the device hubs.": "SteuerboxHub erfasst NUR das §14a-EnWG-Steuersignal des Netzbetreibers und veröffentlicht es über SBH_GetState. Es regelt selbst nichts durch — das EMS verteilt daraus die Sollwerte an die Geräte-Hubs.",
       "Two independent axes: “Load” (limiting controllable consumers such as wallbox, heat pump, storage) and “Feed-in” (reducing PV feed-in; self-consumption and battery charging are not affected).": "Zwei unabhängige Achsen: „Last” (Begrenzung steuerbarer Verbraucher wie Wallbox/Wärmepumpe/Speicher) und „Einspeisung” (Reduktion der PV-Einspeisung; Eigenverbrauch/Speicherladung bleiben davon unberührt).",
